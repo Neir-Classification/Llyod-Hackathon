@@ -1,0 +1,181 @@
+{
+  "customers": [
+    {
+      "id": "C001",
+      "policy_number": "HO-2024-001234",
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john.doe@email.com",
+      "phone": "+1-555-0101",
+      "address": {
+        "street": "123 Maple Street",
+        "city": "Springfield",
+        "state": "IL",
+        "zip": "62701"
+      },
+      "policy_type": "Homeowners HO-3",
+      "coverage": {
+        "dwelling": 350000,
+        "personal_property": 175000,
+        "liability": 300000,
+        "medical_payments": 5000
+      },
+      "deductible": 1000,
+      "premium_annual": 1850,
+      "endorsements": [
+        "Water Backup Coverage",
+        "Identity Theft Protection"
+      ],
+      "policy_start_date": "2024-01-15",
+      "policy_end_date": "2025-01-15",
+      "claims_history": [
+        {
+          "claim_id": "CLM-2023-5567",
+          "date": "2023-06-15",
+          "type": "Wind Damage",
+          "amount_paid": 4500,
+          "status": "Closed"
+        }
+      ]
+    },
+    {
+      "id": "C002",
+      "policy_number": "HO-2024-005678",
+      "first_name": "Sarah",
+      "last_name": "Johnson",
+      "email": "sarah.johnson@email.com",
+      "phone": "+1-555-0102",
+      "address": {
+        "street": "456 Oak Avenue",
+        "city": "Riverside",
+        "state": "CA",
+        "zip": "92501"
+      },
+      "policy_type": "Homeowners HO-3",
+      "coverage": {
+        "dwelling": 550000,
+        "personal_property": 275000,
+        "liability": 500000,
+        "medical_payments": 10000
+      },
+      "deductible": 2500,
+      "premium_annual": 3200,
+      "endorsements": [
+        "Scheduled Personal Property - Jewelry",
+        "Home Business Coverage",
+        "Water Backup Coverage"
+      ],
+      "scheduled_items": [
+        {
+          "type": "Jewelry",
+          "description": "Diamond Engagement Ring",
+          "value": 15000,
+          "appraisal_date": "2024-02-10"
+        },
+        {
+          "type": "Jewelry",
+          "description": "Rolex Submariner Watch",
+          "value": 12000,
+          "appraisal_date": "2024-02-10"
+        }
+      ],
+      "policy_start_date": "2024-03-01",
+      "policy_end_date": "2025-03-01",
+      "claims_history": []
+    },
+    {
+      "id": "C003",
+      "policy_number": "HO-2024-009012",
+      "first_name": "Michael",
+      "last_name": "Chen",
+      "email": "m.chen@email.com",
+      "phone": "+1-555-0103",
+      "address": {
+        "street": "789 Pine Road",
+        "city": "Austin",
+        "state": "TX",
+        "zip": "78701"
+      },
+      "policy_type": "Homeowners HO-3",
+      "coverage": {
+        "dwelling": 425000,
+        "personal_property": 212500,
+        "liability": 300000,
+        "medical_payments": 5000
+      },
+      "deductible": 1500,
+      "premium_annual": 2400,
+      "endorsements": [],
+      "policy_start_date": "2024-06-01",
+      "policy_end_date": "2025-06-01",
+      "claims_history": []
+    },
+    {
+      "id": "C004",
+      "policy_number": "HO-2024-003456",
+      "first_name": "Emily",
+      "last_name": "Rodriguez",
+      "email": "emily.r@email.com",
+      "phone": "+1-555-0104",
+      "address": {
+        "street": "321 Birch Lane",
+        "city": "Miami",
+        "state": "FL",
+        "zip": "33101"
+      },
+      "policy_type": "Homeowners HO-3",
+      "coverage": {
+        "dwelling": 480000,
+        "personal_property": 240000,
+        "liability": 500000,
+        "medical_payments": 10000
+      },
+      "deductible": 2000,
+      "premium_annual": 4500,
+      "endorsements": [
+        "Hurricane Deductible Buyback",
+        "Water Backup Coverage",
+        "Equipment Breakdown"
+      ],
+      "policy_start_date": "2024-04-15",
+      "policy_end_date": "2025-04-15",
+      "claims_history": [
+        {
+          "claim_id": "CLM-2024-1122",
+          "date": "2024-08-20",
+          "type": "Water Damage - Pipe Burst",
+          "amount_paid": 8500,
+          "status": "Closed"
+        }
+      ]
+    },
+    {
+      "id": "C005",
+      "policy_number": "RO-2024-007890",
+      "first_name": "David",
+      "last_name": "Thompson",
+      "email": "d.thompson@email.com",
+      "phone": "+1-555-0105",
+      "address": {
+        "street": "555 Cedar Court",
+        "city": "Denver",
+        "state": "CO",
+        "zip": "80201"
+      },
+      "policy_type": "Renters HO-4",
+      "coverage": {
+        "personal_property": 50000,
+        "liability": 100000,
+        "medical_payments": 2000
+      },
+      "deductible": 500,
+      "premium_annual": 350,
+      "endorsements": [
+        "Replacement Cost Coverage"
+      ],
+      "policy_start_date": "2024-07-01",
+      "policy_end_date": "2025-07-01",
+      "claims_history": []
+    }
+  ]
+}
