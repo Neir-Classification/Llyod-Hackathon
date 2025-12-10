@@ -192,6 +192,7 @@ async def speech_to_text(audio_file: UploadFile = File(...), language: Optional[
             file=(audio_file.filename or "audio.wav", audio_bytes, audio_file.content_type or "audio/wav"),
             language=language,
         )
+        logger.info(f"[SPEECH-TO-TEXT] Transcribed: '{transcript.text}'")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
 
@@ -301,6 +302,8 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         if not body.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
+        logger.info(f"[RAG QUERY INPUT] Query: '{body.query}' | Tone: '{body.tone}' | K: {body.k}")
+        
         # Get or build the vector store
         vector_db = get_vector_store()
         
@@ -310,6 +313,8 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         # Generate tone-adjusted response
         response_text = adjust_tone_with_llm(results, body.query, body.tone)
         
+        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}'")
+        
         return JSONResponse({
             "response": response_text,
             "tone": body.tone,
@@ -318,3 +323,5 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
     except Exception as exc:
         logger.exception("RAG query failed")
         raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
+
+# cd 'c:\Users\praja\Desktop\neir-classification'; python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
