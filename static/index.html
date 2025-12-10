@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Speech/Text Bridge</title>
+  <title>Insurance Policy Chat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600&display=swap" rel="stylesheet">
@@ -17,8 +17,12 @@
       --muted: #94a3b8;
       --border: rgba(255, 255, 255, 0.12);
       --shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+      --user-bg: rgba(14, 165, 233, 0.15);
+      --assistant-bg: rgba(249, 115, 22, 0.08);
     }
+    
     * { box-sizing: border-box; }
+    
     body {
       margin: 0;
       font-family: 'Sora', 'Segoe UI', sans-serif;
@@ -28,466 +32,560 @@
                   var(--bg);
       min-height: 100vh;
       display: flex;
-      justify-content: center;
-      padding: 32px 16px 64px;
+      flex-direction: column;
+      padding: 0;
     }
-    .shell {
-      width: min(1200px, 100%);
-    }
+    
     header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(8px);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 24px;
       flex-wrap: wrap;
-      gap: 12px;
-    }
-    h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
-    .tagline { color: var(--muted); font-size: 15px; }
-    .grid {
-      display: grid;
       gap: 16px;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     }
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 20px;
-      backdrop-filter: blur(8px);
-      box-shadow: var(--shadow);
+    
+    h1 { 
+      margin: 0; 
+      font-size: 24px; 
+      letter-spacing: -0.02em;
     }
-    .card h2 { margin: 0 0 6px; font-size: 20px; }
-    .card p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
-    label { display: block; font-weight: 600; margin-bottom: 6px; }
-    input, select, textarea, button {
+    
+    .tagline { 
+      color: var(--muted); 
+      font-size: 14px; 
+      margin: 0;
+    }
+    
+    .badge { 
+      padding: 6px 12px; 
+      border-radius: 8px; 
+      background: rgba(14,165,233,0.12); 
+      color: var(--accent); 
+      font-weight: 700; 
+      font-size: 12px; 
+    }
+    
+    .container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 900px;
       width: 100%;
+      margin: 0 auto;
+      padding: 0 16px;
+    }
+    
+    .chat-history {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    .message {
+      display: flex;
+      gap: 12px;
+      animation: slideIn 0.3s ease-out;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .message.user {
+      justify-content: flex-end;
+    }
+    
+    .message.user .bubble {
+      background: var(--user-bg);
+      border: 1px solid rgba(14, 165, 233, 0.4);
+      color: #e0f2fe;
+    }
+    
+    .message.assistant .bubble {
+      background: var(--assistant-bg);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      color: var(--text);
+    }
+    
+    .bubble {
+      max-width: 70%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      word-wrap: break-word;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    
+    .message.assistant .bubble audio {
+      width: 100%;
+      margin-top: 8px;
+      height: 32px;
+    }
+    
+    .input-area {
+      padding: 24px 0;
+      border-top: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(8px);
+    }
+    
+    .input-wrapper {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+    
+    .input-controls {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .text-input-row {
+      display: flex;
+      gap: 8px;
+    }
+    
+    #message-input {
+      flex: 1;
       border-radius: 10px;
       border: 1px solid var(--border);
-      padding: 10px 12px;
+      padding: 12px 14px;
       background: rgba(255,255,255,0.04);
       color: var(--text);
       font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      max-height: 100px;
     }
-    textarea { min-height: 120px; resize: vertical; }
-    input[type="file"] { padding: 8px; background: transparent; }
-    .row { display: flex; gap: 10px; align-items: center; }
-    .row > * { flex: 1; }
-    .pill {
-      display: inline-flex;
-      align-items: center;
+    
+    #message-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: rgba(255,255,255,0.06);
+    }
+    
+    .button-group {
+      display: flex;
       gap: 8px;
-      padding: 10px 12px;
-      border-radius: 12px;
+    }
+    
+    button {
+      padding: 10px 14px;
+      border-radius: 8px;
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.04);
-      width: auto;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
     }
+    
+    button:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: var(--accent);
+    }
+    
     button.primary {
       background: linear-gradient(120deg, var(--accent), var(--accent-2));
       border: none;
-      cursor: pointer;
-      font-weight: 700;
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      color: white;
       box-shadow: 0 10px 30px rgba(14,165,233,0.25);
     }
-    button.primary:hover { transform: translateY(-1px); }
-    button.primary:active { transform: translateY(0px) scale(0.99); }
-    button.secondary {
-      cursor: pointer;
+    
+    button.primary:hover {
+      transform: translateY(-1px);
+    }
+    
+    button.primary:active {
+      transform: translateY(0px) scale(0.99);
+    }
+    
+    button.recording {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #fca5a5;
+    }
+    
+    .controls-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    .control-group {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    
+    .control-group label {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+      font-weight: 500;
+    }
+    
+    select {
+      padding: 6px 8px;
+      border-radius: 6px;
       border: 1px solid var(--border);
-      background: rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-size: 12px;
+    }
+    
+    .status {
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+    
+    .status.recording {
+      color: #fca5a5;
       font-weight: 600;
     }
-    .status { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 18px; }
-    .output {
-      margin-top: 12px;
-      padding: 12px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,0.03);
-      min-height: 80px;
-      font-size: 14px;
-      white-space: pre-wrap;
+    
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 40px 20px;
     }
-    audio { width: 100%; margin-top: 10px; }
-    .badge { padding: 4px 8px; border-radius: 8px; background: rgba(14,165,233,0.12); color: var(--accent); font-weight: 700; font-size: 12px; }
-    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
-    @media (max-width: 720px) {
-      header { flex-direction: column; align-items: flex-start; }
-      .row { flex-direction: column; }
-      .actions button { width: 100%; }
+    
+    .empty-state h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: var(--text);
+    }
+    
+    .empty-state p {
+      margin: 0;
+      font-size: 14px;
+    }
+    
+    @media (max-width: 640px) {
+      .bubble {
+        max-width: 85%;
+      }
+      
+      .input-wrapper {
+        flex-direction: column;
+      }
+      
+      .text-input-row {
+        flex-direction: column;
+      }
+      
+      button {
+        font-size: 12px;
+        padding: 9px 12px;
+      }
+      
+      .controls-row {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+    
+    /* Scrollbar styling */
+    .chat-history::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .chat-history::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    .chat-history::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+    }
+    
+    .chat-history::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.2);
     }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <header>
-      <div>
-        <h1>Speech/Text Bridge</h1>
-        <div class="tagline">Transcribe speech and synthesize voice with OpenAI.</div>
+  <header>
+    <div>
+      <h1>Insurance Policy Chat</h1>
+      <p class="tagline">Ask about your policy coverage</p>
+    </div>
+    <span class="badge">Live Chat</span>
+  </header>
+
+  <div class="container">
+    <div class="chat-history" id="chat-history">
+      <div class="empty-state">
+        <h2>Welcome to Policy Chat</h2>
+        <p>Ask about your insurance coverage by typing or speaking</p>
       </div>
-      <span class="badge">Live demo</span>
-    </header>
+    </div>
 
-    <div class="grid">
-      <section class="card" id="stt-card">
-        <h2>Speech -> Text</h2>
-        <p>Upload audio or record from mic, then transcribe.</p>
-        <label for="audio-input">Audio file</label>
-        <input id="audio-input" type="file" accept="audio/*" />
-
-        <div class="actions" style="margin: 12px 0 6px;">
-          <button id="record-btn" class="secondary" type="button">Start recording</button>
-          <button id="transcribe-btn" class="primary" type="button">Transcribe</button>
-        </div>
-
-        <div class="row" style="margin-top: 8px;">
-          <div>
-            <label for="language">Language (optional)</label>
-            <input id="language" type="text" placeholder="auto" />
+    <div class="input-area">
+      <div class="status" id="status"></div>
+      
+      <div class="input-wrapper">
+        <div class="input-controls">
+          <div class="text-input-row">
+            <textarea 
+              id="message-input" 
+              placeholder="Type your question about your policy... or use the voice button" 
+              rows="1"
+            ></textarea>
+            <button id="send-btn" class="primary" type="button">Send</button>
           </div>
-          <div class="pill" id="recording-indicator" style="display:none;">REC Recording...</div>
-        </div>
-
-        <div class="status" id="stt-status"></div>
-        <div class="output" id="transcript-output">Transcript will appear here.</div>
-      </section>
-
-      <section class="card" id="live-card">
-        <h2>Live mic -> Text</h2>
-        <p>Record from mic; transcription happens when you stop or after ~3s silence.</p>
-
-        <div class="actions" style="margin: 12px 0 6px;">
-          <button id="live-toggle" class="primary" type="button">Start listening</button>
-        </div>
-        <div class="row" style="margin-top: 8px;">
-          <div>
-            <label for="live-language">Language (optional)</label>
-            <input id="live-language" type="text" placeholder="auto" />
-          </div>
-          <div class="pill" id="live-indicator" style="display:none;">REC Live...</div>
-        </div>
-        <div class="status" id="live-status"></div>
-        <div class="output" id="live-output">Live transcript will appear here.</div>
-      </section>
-
-      <section class="card" id="tts-card">
-        <h2>Text -> Speech</h2>
-        <p>Type text, pick a voice, and listen.</p>
-        <label for="tts-text">Text</label>
-        <textarea id="tts-text" placeholder="Hello, world!"></textarea>
-
-        <div class="row" style="margin-top: 8px;">
-          <div>
-            <label for="voice">Voice</label>
-            <select id="voice">
-              <option value="alloy">alloy</option>
-              <option value="verse">verse</option>
-              <option value="coral">coral</option>
-            </select>
-          </div>
-          <div>
-            <label for="format">Format</label>
-            <select id="format">
-              <option value="mp3">mp3</option>
-              <option value="opus">opus</option>
-              <option value="aac">aac</option>
-            </select>
+          
+          <div class="controls-row">
+            <div class="button-group">
+              <button id="voice-input-btn" type="button">🎤 Voice Input</button>
+              <button id="voice-output-toggle" type="button">🔊 Auto-play Voice</button>
+            </div>
+            
+            <div class="control-group">
+              <label for="tone-select">Tone:</label>
+              <select id="tone-select">
+                <option value="neutral">Neutral</option>
+                <option value="confused">Confused</option>
+                <option value="angry">Frustrated</option>
+                <option value="happy">Happy</option>
+                <option value="anxious">Anxious</option>
+              </select>
+            </div>
           </div>
         </div>
-
-        <div class="actions" style="margin: 12px 0 6px;">
-          <button id="tts-btn" class="primary" type="button">Generate speech</button>
-          <label class="pill" style="width:auto; cursor:pointer;">
-            <input type="checkbox" id="auto-tts" style="width:auto; margin:0;" /> Auto-play as you type
-          </label>
-        </div>
-
-        <div class="status" id="tts-status"></div>
-        <audio id="tts-audio" controls></audio>
-      </section>
+      </div>
     </div>
   </div>
 
   <script>
-    const audioInput = document.getElementById('audio-input');
-    const recordBtn = document.getElementById('record-btn');
-    const transcribeBtn = document.getElementById('transcribe-btn');
-    const sttStatus = document.getElementById('stt-status');
-    const transcriptOutput = document.getElementById('transcript-output');
-    const languageInput = document.getElementById('language');
-    const recordingIndicator = document.getElementById('recording-indicator');
-
-    const ttsText = document.getElementById('tts-text');
-    const voiceSelect = document.getElementById('voice');
-    const formatSelect = document.getElementById('format');
-    const ttsBtn = document.getElementById('tts-btn');
-    const ttsStatus = document.getElementById('tts-status');
-    const ttsAudio = document.getElementById('tts-audio');
-    const autoTts = document.getElementById('auto-tts');
-
-    const liveToggle = document.getElementById('live-toggle');
-    const liveStatus = document.getElementById('live-status');
-    const liveOutput = document.getElementById('live-output');
-    const liveLanguage = document.getElementById('live-language');
-    const liveIndicator = document.getElementById('live-indicator');
-
-    const preferredMime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : (MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''));
+    const chatHistory = document.getElementById('chat-history');
+    const messageInput = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-btn');
+    const voiceInputBtn = document.getElementById('voice-input-btn');
+    const voiceOutputToggle = document.getElementById('voice-output-toggle');
+    const toneSelect = document.getElementById('tone-select');
+    const statusEl = document.getElementById('status');
 
     let mediaRecorder = null;
     let recordedChunks = [];
     let isRecording = false;
+    let isVoiceOutputEnabled = false;
 
-    let liveRecorder = null;
-    let isLive = false;
-    let liveStream = null;
-    let liveChunks = [];
-    let liveAudioCtx = null;
-    let liveAnalyser = null;
-    let liveDataArray = null;
-    let silenceTimer = null;
-    let silenceInterval = null;
+    const preferredMime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 
+                         (MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : 
+                         (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''));
 
-    const SILENCE_WINDOW_MS = 3000;
-    const SILENCE_CHECK_MS = 250;
-    const SILENCE_THRESHOLD = 0.01; // simple RMS threshold
+    function setStatus(text) {
+      statusEl.textContent = text;
+      statusEl.classList.remove('recording');
+    }
 
-    function setSttStatus(text) { sttStatus.textContent = text; }
-    function setTtsStatus(text) { ttsStatus.textContent = text; }
+    function setStatusRecording(text) {
+      statusEl.textContent = text;
+      statusEl.classList.add('recording');
+    }
 
-    async function startRecording() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        recordedChunks = [];
-        mediaRecorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-        mediaRecorder.onstop = () => { stream.getTracks().forEach(t => t.stop()); };
-        mediaRecorder.start();
-        isRecording = true;
-        recordBtn.textContent = 'Stop recording';
-        recordingIndicator.style.display = 'inline-flex';
-        setSttStatus('Recording...');
-      } catch (err) {
-        console.error(err);
-        setSttStatus('Mic access denied. In browser address bar, enable microphone for this site and retry.');
+    function addMessageToChat(text, isUser) {
+      const chatDiv = document.createElement('div');
+      chatDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+      
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+      
+      chatDiv.appendChild(bubble);
+      
+      // Remove empty state if first message
+      if (chatHistory.querySelector('.empty-state')) {
+        chatHistory.innerHTML = '';
+      }
+      
+      chatHistory.appendChild(chatDiv);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function addAudioToLastMessage(audioBlob) {
+      const lastMessage = chatHistory.querySelector('.message.assistant:last-child');
+      if (!lastMessage) return;
+      
+      const bubble = lastMessage.querySelector('.bubble');
+      const audioEl = document.createElement('audio');
+      audioEl.controls = true;
+      audioEl.src = URL.createObjectURL(audioBlob);
+      bubble.appendChild(audioEl);
+      
+      if (isVoiceOutputEnabled) {
+        audioEl.play();
       }
     }
 
-    function stopRecording() {
-      if (mediaRecorder && isRecording) {
-        mediaRecorder.stop();
-        isRecording = false;
-        recordBtn.textContent = 'Start recording';
-        recordingIndicator.style.display = 'none';
-        setSttStatus('Recording stopped. You can now transcribe.');
-      }
-    }
+    async function sendMessage(text) {
+      if (!text.trim()) return;
 
-    recordBtn.addEventListener('click', () => {
-      if (!isRecording) {
-        startRecording();
-      } else {
-        stopRecording();
-      }
-    });
+      addMessageToChat(text, true);
+      messageInput.value = '';
+      messageInput.style.height = 'auto';
 
-    transcribeBtn.addEventListener('click', async () => {
-      setSttStatus('Uploading...');
-      transcriptOutput.textContent = '';
-
-      let file = audioInput.files[0];
-      if (!file && recordedChunks.length) {
-        const mime = preferredMime || 'audio/webm';
-        const ext = mime.includes('ogg') ? 'ogg' : (mime.includes('mp4') ? 'mp4' : 'webm');
-        file = new File(recordedChunks, `recording.${ext}`, { type: mime });
-      }
-      if (!file) {
-        setSttStatus('Please upload or record audio first.');
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('audio_file', file);
-      const language = languageInput.value.trim();
-      if (language) formData.append('language', language);
+      setStatus('Processing query...');
 
       try {
-        const response = await fetch('/speech-to-text', { method: 'POST', body: formData });
-        if (!response.ok) throw new Error(await response.text());
-        const data = await response.json();
-        transcriptOutput.textContent = data.text || '(no text returned)';
-        setSttStatus('Done.');
-      } catch (err) {
-        console.error(err);
-        setSttStatus('Error: ' + err.message);
-        transcriptOutput.textContent = '-';
-      }
-    });
-
-    ttsBtn.addEventListener('click', async () => {
-      const text = ttsText.value.trim();
-      if (!text) {
-        setTtsStatus('Enter some text first.');
-        return;
-      }
-      setTtsStatus('Generating...');
-      ttsAudio.removeAttribute('src');
-      ttsAudio.load();
-
-      try {
-        const response = await fetch('/text-to-speech', {
+        // Query the RAG pipeline
+        const response = await fetch('/rag-query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text,
-            voice: voiceSelect.value,
-            audio_format: formatSelect.value,
-          }),
+            query: text,
+            tone: toneSelect.value,
+            k: 2
+          })
         });
-        if (!response.ok) throw new Error(await response.text());
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        ttsAudio.src = url;
-        ttsAudio.play();
-        setTtsStatus('Ready.');
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        const data = await response.json();
+        addMessageToChat(data.response, false);
+
+        setStatus('Generating voice response...');
+
+        // Convert response to speech
+        const ttsResponse = await fetch('/text-to-speech', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: data.response,
+            voice: 'coral',
+            audio_format: 'mp3'
+          })
+        });
+
+        if (!ttsResponse.ok) {
+          throw new Error(await ttsResponse.text());
+        }
+
+        const audioBlob = await ttsResponse.blob();
+        addAudioToLastMessage(audioBlob);
+        setStatus('');
       } catch (err) {
         console.error(err);
-        setTtsStatus('Error: ' + err.message);
+        addMessageToChat(`Error: ${err.message}`, false);
+        setStatus(`Error: ${err.message}`);
       }
-    });
-
-    function debounce(fn, delay) {
-      let timer = null;
-      return (...args) => {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn(...args), delay);
-      };
     }
 
-    const autoPlayTts = debounce(() => {
-      if (!autoTts.checked) return;
-      ttsBtn.click();
-    }, 900);
-
-    ttsText.addEventListener('input', autoPlayTts);
-
-    async function startLive() {
+    async function startVoiceInput() {
       try {
-        liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        liveChunks = [];
-        const liveOptions = preferredMime ? { mimeType: preferredMime } : undefined;
-        liveRecorder = new MediaRecorder(liveStream, liveOptions);
-
-        // Accumulate all chunks; we'll transcribe when stopped
-        liveRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) liveChunks.push(e.data);
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recordedChunks = [];
+        mediaRecorder = preferredMime ? 
+          new MediaRecorder(stream, { mimeType: preferredMime }) : 
+          new MediaRecorder(stream);
+        
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
         };
-
-        liveRecorder.onstop = async () => {
-          if (silenceInterval) clearInterval(silenceInterval);
-          if (!liveChunks.length) {
-            liveStatus.textContent = 'No audio captured.';
-            return;
-          }
-          liveStatus.textContent = 'Transcribing...';
-          const mime = preferredMime || 'audio/webm';
-          const ext = mime.includes('ogg') ? 'ogg' : (mime.includes('mp4') ? 'mp4' : 'webm');
-          const file = new File(liveChunks, `recording.${ext}`, { type: mime });
-
-          const formData = new FormData();
-          formData.append('audio_file', file);
-          const lang = liveLanguage.value.trim();
-          if (lang) formData.append('language', lang);
+        
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          setStatusRecording('Transcribing...');
 
           try {
-            const response = await fetch('/speech-to-text', { method: 'POST', body: formData });
+            const mime = preferredMime || 'audio/webm';
+            const ext = mime.includes('ogg') ? 'ogg' : 
+                       (mime.includes('mp4') ? 'mp4' : 'webm');
+            const file = new File(recordedChunks, `recording.${ext}`, { type: mime });
+
+            const formData = new FormData();
+            formData.append('audio_file', file);
+
+            const response = await fetch('/speech-to-text', {
+              method: 'POST',
+              body: formData
+            });
+
             if (!response.ok) throw new Error(await response.text());
             const data = await response.json();
-            liveOutput.textContent = data.text || '(no text returned)';
-            liveStatus.textContent = 'Done.';
+            
+            setStatus('');
+            await sendMessage(data.text);
           } catch (err) {
             console.error(err);
-            liveStatus.textContent = 'Transcription error: ' + err.message;
+            setStatus(`Transcription error: ${err.message}`);
           }
         };
 
-        liveRecorder.start();
-        isLive = true;
-        liveIndicator.style.display = 'inline-flex';
-        liveToggle.textContent = 'Stop listening';
-        liveStatus.textContent = 'Listening... (stop or stay silent ~3s)';
-
-        // Set up simple VAD-ish silence stop (RMS based).
-        liveAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const source = liveAudioCtx.createMediaStreamSource(liveStream);
-        liveAnalyser = liveAudioCtx.createAnalyser();
-        liveAnalyser.fftSize = 2048;
-        const bufferLength = liveAnalyser.fftSize;
-        liveDataArray = new Float32Array(bufferLength);
-        source.connect(liveAnalyser);
-
-        const checkSilence = () => {
-          if (!isLive || !liveAnalyser) return;
-          liveAnalyser.getFloatTimeDomainData(liveDataArray);
-          let sumSquares = 0;
-          for (let i = 0; i < liveDataArray.length; i++) {
-            const v = liveDataArray[i];
-            sumSquares += v * v;
-          }
-          const rms = Math.sqrt(sumSquares / liveDataArray.length);
-          if (rms < SILENCE_THRESHOLD) {
-            if (!silenceTimer) {
-              silenceTimer = setTimeout(() => {
-                liveStatus.textContent = 'Silence detected. Stopping...';
-                stopLive();
-              }, SILENCE_WINDOW_MS);
-            }
-          } else if (silenceTimer) {
-            clearTimeout(silenceTimer);
-            silenceTimer = null;
-          }
-        };
-
-        silenceInterval = setInterval(checkSilence, SILENCE_CHECK_MS);
+        mediaRecorder.start();
+        isRecording = true;
+        voiceInputBtn.textContent = '⏹️ Stop Recording';
+        setStatusRecording('Recording...');
       } catch (err) {
         console.error(err);
-        liveStatus.textContent = 'Mic access denied. In browser address bar, enable microphone for this site and retry.';
+        setStatus('Microphone access denied. Please enable microphone access in your browser.');
       }
     }
 
-    function stopLive() {
-      if (liveRecorder && isLive) {
-        liveRecorder.stop();
+    function stopVoiceInput() {
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        voiceInputBtn.textContent = '🎤 Voice Input';
       }
-      if (liveStream) {
-        liveStream.getTracks().forEach(t => t.stop());
-      }
-      if (liveAudioCtx) {
-        liveAudioCtx.close();
-        liveAudioCtx = null;
-      }
-      if (silenceTimer) {
-        clearTimeout(silenceTimer);
-        silenceTimer = null;
-      }
-      if (silenceInterval) {
-        clearInterval(silenceInterval);
-        silenceInterval = null;
-      }
-      isLive = false;
-      liveIndicator.style.display = 'none';
-      liveToggle.textContent = 'Start listening';
     }
 
-    liveToggle.addEventListener('click', () => {
-      if (!isLive) {
-        liveOutput.textContent = '';
-        startLive();
-      } else {
-        stopLive();
+    // Auto-resize textarea
+    messageInput.addEventListener('input', () => {
+      messageInput.style.height = 'auto';
+      messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
+    });
+
+    // Send on Enter (Shift+Enter for new line)
+    messageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(messageInput.value);
       }
     });
+
+    sendBtn.addEventListener('click', () => {
+      sendMessage(messageInput.value);
+    });
+
+    voiceInputBtn.addEventListener('click', () => {
+      if (!isRecording) {
+        startVoiceInput();
+      } else {
+        stopVoiceInput();
+      }
+    });
+
+    voiceOutputToggle.addEventListener('click', () => {
+      isVoiceOutputEnabled = !isVoiceOutputEnabled;
+      voiceOutputToggle.style.opacity = isVoiceOutputEnabled ? '1' : '0.6';
+    });
+
+    // Focus message input on load
+    messageInput.focus();
   </script>
 </body>
 </html>

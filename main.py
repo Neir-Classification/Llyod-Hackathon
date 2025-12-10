@@ -10,6 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from pydantic import BaseModel
 
+# RAG imports
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.documents import Document
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,130 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Load environment variables from a local .env file if present (for local dev convenience).
 load_dotenv(BASE_DIR / ".env")
+
+# RAG Configuration
+PRAJAS_NIER_DIR = BASE_DIR / "Prajas-Nier"
+DATASET_DIR = PRAJAS_NIER_DIR / "Dataset"
+PDF_PATHS = [DATASET_DIR / "policy-booklet.pdf", DATASET_DIR / "policy-limits.pdf"]
+FAISS_DIR = PRAJAS_NIER_DIR / "artifacts" / "faiss_index"
+
+TONE_PROMPTS = {
+    "angry": "You are a calm, empathetic customer service agent. Acknowledge the user's frustration briefly and provide clear information. Avoid defensive or technical language. Keep it short and reassuring.",
+    "confused": "You are a patient and reassuring assistant. Explain the policy information simply and clearly. Avoid jargon. Use everyday language.",
+    "neutral": "You are a professional insurance assistant. Provide clear, factual information about the policy. Be direct and concise.",
+    "happy": "You are a warm and friendly insurance assistant. Provide the policy information in a positive, helpful manner. Keep it professional but personable.",
+    "anxious": "You are a reassuring and supportive assistant. Provide clear information and emphasize what's covered and next steps. Be comforting and specific."
+}
+
+# Global vector store (cached)
+_vector_store = None
+
+
+def get_vector_store():
+    """Get or initialize the FAISS vector store."""
+    global _vector_store
+    if _vector_store is not None:
+        return _vector_store
+    
+    if FAISS_DIR.exists():
+        try:
+            embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+            _vector_store = FAISS.load_local(str(FAISS_DIR), embeddings, allow_dangerous_deserialization=True)
+            return _vector_store
+        except Exception as e:
+            logger.warning(f"Failed to load existing FAISS index: {e}. Rebuilding...")
+    
+    # Build new index if not found
+    return build_vector_store()
+
+
+def load_pdfs(pdf_paths):
+    """Load PDFs and add metadata."""
+    docs = []
+    for path in pdf_paths:
+        if not path.exists():
+            logger.warning(f"PDF not found: {path}")
+            continue
+        loader = PyPDFLoader(str(path))
+        loaded_docs = loader.load()
+        policy_name = path.name
+        for doc in loaded_docs:
+            doc.metadata["policy_name"] = policy_name
+            if "page" in doc.metadata:
+                doc.metadata["page_number"] = doc.metadata["page"]
+        docs.extend(loaded_docs)
+    return docs
+
+
+def chunk_docs(docs, chunk_size=500, chunk_overlap=100):
+    """Split documents into chunks."""
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=["\n\n", "\n", ". ", " ", ""]
+    )
+    chunks = splitter.split_documents(docs)
+    for chunk in chunks:
+        if "policy_name" not in chunk.metadata:
+            chunk.metadata["policy_name"] = chunk.metadata.get("source", "unknown")
+        if "page_number" not in chunk.metadata and "page" in chunk.metadata:
+            chunk.metadata["page_number"] = chunk.metadata["page"]
+    return chunks
+
+
+def build_vector_store():
+    """Build a new FAISS vector store from PDFs."""
+    global _vector_store
+    logger.info("Building FAISS index from PDFs...")
+    docs = load_pdfs(PDF_PATHS)
+    if not docs:
+        raise RuntimeError("No PDFs found to index")
+    chunks = chunk_docs(docs)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+    _vector_store = FAISS.from_documents(chunks, embeddings)
+    FAISS_DIR.mkdir(parents=True, exist_ok=True)
+    _vector_store.save_local(str(FAISS_DIR))
+    logger.info(f"FAISS index built and saved to {FAISS_DIR}")
+    return _vector_store
+
+
+def retrieve(query: str, vector_db: FAISS, k: int = 2):
+    """Retrieve relevant chunks from the vector store."""
+    enhanced_query = f"policy coverage clause: {query}"
+    docs = vector_db.max_marginal_relevance_search(enhanced_query, k=k, fetch_k=20)
+    
+    # Limit chunk length for voice output
+    for doc in docs:
+        doc.page_content = doc.page_content[:600]
+    
+    return [(doc, 0.0) for doc in docs]
+
+
+def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral") -> str:
+    """Use LLM to generate a tone-appropriate response from retrieved chunks."""
+    if tone not in TONE_PROMPTS:
+        tone = "neutral"
+    
+    # Combine retrieved chunks into context
+    context = "\n\n".join([doc.page_content for doc, _ in retrieved_chunks])
+    
+    system_prompt = f"""{TONE_PROMPTS[tone]}
+
+Based on the policy information below, answer the user's question in 3-4 short sentences suitable for voice (20-30 seconds of speech).
+
+Policy Context:
+{context}"""
+
+    user_prompt = f"User question: {user_question}"
+    
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    
+    response = llm.invoke(messages)
+    return response.content
 
 
 def get_openai_client() -> OpenAI:
@@ -34,6 +165,12 @@ class SpeechRequest(BaseModel):
     text: str
     voice: Optional[str] = "alloy"
     audio_format: Optional[str] = "mp3"
+
+
+class RAGQueryRequest(BaseModel):
+    query: str
+    tone: Optional[str] = "neutral"
+    k: Optional[int] = 2
 
 
 @app.get("/health")
@@ -155,3 +292,29 @@ async def root():
         "message": "Speech/Text service ready",
         "routes": ["GET /health", "POST /speech-to-text", "POST /text-to-speech"],
     }
+
+
+@app.post("/rag-query")
+async def rag_query(body: RAGQueryRequest) -> JSONResponse:
+    """Query the RAG pipeline and return a tone-adjusted response."""
+    try:
+        if not body.query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+        # Get or build the vector store
+        vector_db = get_vector_store()
+        
+        # Retrieve relevant chunks
+        results = retrieve(body.query, vector_db, k=body.k)
+        
+        # Generate tone-adjusted response
+        response_text = adjust_tone_with_llm(results, body.query, body.tone)
+        
+        return JSONResponse({
+            "response": response_text,
+            "tone": body.tone,
+            "query": body.query
+        })
+    except Exception as exc:
+        logger.exception("RAG query failed")
+        raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
