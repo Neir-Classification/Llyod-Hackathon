@@ -349,4 +349,177 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         logger.exception("RAG query failed")
         raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
 
+
+@app.post("/rag-audio-query")
+async def rag_audio_query(
+    audio_file: UploadFile = File(...),
+    tone: Optional[str] = Form("neutral"),
+    k: Optional[int] = Form(2),
+    voice: Optional[str] = Form("alloy"),
+    language: Optional[str] = Form(None),
+) -> StreamingResponse:
+    """
+    Complete audio-to-audio RAG pipeline:
+    1. Speech-to-text: Convert audio input to text
+    2. RAG: Query the knowledge base
+    3. Text-to-speech: Convert response back to audio
+    """
+    client = get_openai_client()
+    
+    # Step 1: Speech-to-Text
+    audio_bytes = await audio_file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio payload")
+    
+    try:
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(audio_file.filename or "audio.wav", audio_bytes, audio_file.content_type or "audio/wav"),
+            language=language,
+        )
+        user_query = transcript.text
+        logger.info(f"[RAG-AUDIO] Transcribed query: '{user_query}'")
+    except Exception as exc:
+        logger.exception("Transcription failed in RAG audio query")
+        raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
+    
+    # Step 2: RAG Query
+    try:
+        if not user_query.strip():
+            raise HTTPException(status_code=400, detail="Transcribed query is empty")
+        
+        vector_db = get_vector_store()
+        results = retrieve(user_query, vector_db, k=k)
+        response_text = adjust_tone_with_llm(results, user_query, tone)
+        
+        logger.info(f"[RAG-AUDIO] Generated response: '{response_text}'")
+    except Exception as exc:
+        logger.exception("RAG query failed in audio pipeline")
+        raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
+    
+    # Step 3: Text-to-Speech
+    try:
+        stream = client.audio.speech.with_streaming_response.create(
+            model="gpt-4o-mini-tts",
+            voice=voice or "alloy",
+            input=response_text,
+            response_format="mp3",
+        )
+    except Exception as exc:
+        logger.exception("TTS failed in RAG audio query")
+        raise HTTPException(status_code=502, detail=f"TTS failed: {exc}") from exc
+    
+    def iter_audio():
+        with stream as response:
+            for chunk in response.iter_bytes():
+                yield chunk
+    
+    headers = {
+        "Content-Disposition": "inline; filename=rag-response.mp3",
+        "X-Transcribed-Query": user_query,
+        "X-Response-Text": response_text[:200]  # Truncated for header size limits
+    }
+    return StreamingResponse(iter_audio(), media_type="audio/mpeg", headers=headers)
+
+
+@app.post("/rag-audio-query-chunk")
+async def rag_audio_query_chunk(
+    audio_chunk: UploadFile = File(...),
+    tone: Optional[str] = Form("neutral"),
+    k: Optional[int] = Form(2),
+    voice: Optional[str] = Form("alloy"),
+    language: Optional[str] = Form(None),
+    mime_type: Optional[str] = Form(None),
+) -> StreamingResponse:
+    """
+    Audio chunk-based RAG pipeline (for streaming/real-time scenarios):
+    1. Speech-to-text: Convert audio chunk to text
+    2. RAG: Query the knowledge base
+    3. Text-to-speech: Convert response back to audio
+    """
+    client = get_openai_client()
+    
+    # Step 1: Speech-to-Text (Chunk)
+    chunk_bytes = await audio_chunk.read()
+    if not chunk_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio payload")
+    
+    supported = {
+        "audio/webm": "webm",
+        "audio/ogg": "ogg",
+        "audio/mp3": "mp3",
+        "audio/mpeg": "mp3",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/mp4": "mp4",
+        "audio/m4a": "m4a",
+        "video/webm": "webm",
+    }
+    
+    def pick_mime() -> str:
+        for candidate in [mime_type, audio_chunk.content_type, "audio/webm"]:
+            if not candidate:
+                continue
+            base = candidate.split(";")[0].strip().lower()
+            if base in supported:
+                return base
+        return "audio/webm"
+    
+    mime = pick_mime()
+    ext = supported[mime]
+    filename = audio_chunk.filename or f"chunk.{ext}"
+    content_type = mime
+    
+    logger.info(f"[RAG-AUDIO-CHUNK] Processing: filename={filename}, size={len(chunk_bytes)}")
+    
+    try:
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(filename, chunk_bytes, content_type),
+            language=language,
+        )
+        user_query = transcript.text
+        logger.info(f"[RAG-AUDIO-CHUNK] Transcribed query: '{user_query}'")
+    except Exception as exc:
+        logger.exception("Transcription failed in RAG audio chunk query")
+        raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
+    
+    # Step 2: RAG Query
+    try:
+        if not user_query.strip():
+            raise HTTPException(status_code=400, detail="Transcribed query is empty")
+        
+        vector_db = get_vector_store()
+        results = retrieve(user_query, vector_db, k=k)
+        response_text = adjust_tone_with_llm(results, user_query, tone)
+        
+        logger.info(f"[RAG-AUDIO-CHUNK] Generated response: '{response_text}'")
+    except Exception as exc:
+        logger.exception("RAG query failed in audio chunk pipeline")
+        raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
+    
+    # Step 3: Text-to-Speech
+    try:
+        stream = client.audio.speech.with_streaming_response.create(
+            model="gpt-4o-mini-tts",
+            voice=voice or "alloy",
+            input=response_text,
+            response_format="mp3",
+        )
+    except Exception as exc:
+        logger.exception("TTS failed in RAG audio chunk query")
+        raise HTTPException(status_code=502, detail=f"TTS failed: {exc}") from exc
+    
+    def iter_audio():
+        with stream as response:
+            for chunk in response.iter_bytes():
+                yield chunk
+    
+    headers = {
+        "Content-Disposition": "inline; filename=rag-response.mp3",
+        "X-Transcribed-Query": user_query,
+        "X-Response-Text": response_text[:200]  # Truncated for header size limits
+    }
+    return StreamingResponse(iter_audio(), media_type="audio/mpeg", headers=headers)
+
 # cd 'c:\Users\praja\Desktop\neir-classification'; python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
