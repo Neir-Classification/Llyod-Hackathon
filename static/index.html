@@ -3,59 +3,183 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Speech/Text Bridge</title>
+  <title>Nova Voice Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
   <style>
     :root {
-      --bg: #0f172a;
-      --panel: rgba(255, 255, 255, 0.06);
-      --accent: #0ea5e9;
-      --accent-2: #f97316;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --border: rgba(255, 255, 255, 0.12);
-      --shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+      --bg: #0a0f1f;
+      --bg-gradient: linear-gradient(135deg, #0a0f1f 0%, #1a1e3a 100%);
+      --glass: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --accent: #4f46e5;
+      --accent-hover: #6366f1;
+      --accent-2: #f59e0b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --error: #ef4444;
+      --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3);
+      --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      --blur: blur(12px);
     }
-    * { box-sizing: border-box; }
-    body {
+    * {
       margin: 0;
-      font-family: 'Sora', 'Segoe UI', sans-serif;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg);
+      background: var(--bg-gradient);
       color: var(--text);
-      background: radial-gradient(circle at 20% 20%, rgba(14,165,233,0.12), transparent 35%),
-                  radial-gradient(circle at 80% 0%, rgba(249,115,22,0.14), transparent 40%),
-                  var(--bg);
       min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      padding: 32px 16px 64px;
+      line-height: 1.6;
+      overflow-x: hidden;
+      padding: 0;
+      margin: 0;
+      position: relative;
     }
-    .shell {
-      width: min(1200px, 100%);
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: 
+        radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.1) 0%, transparent 25%),
+        radial-gradient(circle at 80% 80%, rgba(245, 158, 11, 0.1) 0%, transparent 25%);
+      pointer-events: none;
+      z-index: -1;
     }
+    /* Layout */
+    .app-container {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr auto;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      gap: 2rem;
+    }
+
+    /* Header */
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-      gap: 12px;
+      padding: 1.5rem 0;
+      position: relative;
+      z-index: 10;
     }
-    h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
-    .tagline { color: var(--muted); font-size: 15px; }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 1.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 1rem;
+    }
+
+    .tagline {
+      color: var(--text-muted);
+      font-size: 0.9375rem;
+      margin-top: 0.25rem;
+      font-weight: 400;
+    }
+
+    /* Main Content */
+    .main-content {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 2rem;
+      align-items: flex-start;
+    }
+
+    @media (max-width: 1024px) {
+      .main-content {
+        grid-template-columns: 1fr;
+      }
+    }
     .grid {
       display: grid;
       gap: 16px;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     }
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 20px;
-      backdrop-filter: blur(8px);
-      box-shadow: var(--shadow);
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .app-container {
+        padding: 1rem;
+        gap: 1.5rem;
+      }
+
+      .main-content {
+        gap: 1.5rem;
+      }
+
+      .assistant-avatar {
+        width: 140px;
+        height: 140px;
+        margin-bottom: 1.5rem;
+      }
+
+      .assistant-message {
+        min-height: 100px;
+        padding: 1rem;
+      }
+
+      .control-button {
+        width: 48px;
+        height: 48px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+
+      .assistant-avatar {
+        width: 120px;
+        height: 120px;
+      }
+
+      .assistant-controls {
+        gap: 0.75rem;
+      }
+
+      .control-button {
+        width: 44px;
+        height: 44px;
+      }
+
+      .control-button i {
+        font-size: 1.25rem;
+      }
     }
     .card h2 { margin: 0 0 6px; font-size: 20px; }
     .card p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
@@ -118,17 +242,612 @@
       .row { flex-direction: column; }
       .actions button { width: 100%; }
     }
+    /* Glass Panel */
+    .glass-panel {
+      background: var(--glass);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      border: 1px solid var(--glass-border);
+      border-radius: 1.25rem;
+      box-shadow: var(--shadow);
+      padding: 1.75rem;
+      transition: var(--transition);
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .glass-panel:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 15px 40px -10px rgba(0, 0, 0, 0.4);
+    }
+
+    .panel-header {
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .panel-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+
+    /* Voice Assistant */
+    .voice-assistant {
+      position: relative;
+      overflow: hidden;
+      min-height: 500px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .assistant-avatar {
+      width: 180px;
+      height: 180px;
+      margin: 0 auto 2rem;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+      border: 2px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: var(--transition);
+      animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .assistant-avatar::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-radius: 50%;
+      z-index: -1;
+      opacity: 0.5;
+      filter: blur(12px);
+    }
+
+    .assistant-avatar img {
+      width: 80%;
+      height: 80%;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
+    }
+
+    .assistant-status {
+      text-align: center;
+      margin-bottom: 1.5rem;
+      min-height: 24px;
+      color: var(--text-muted);
+      font-size: 0.9375rem;
+      font-weight: 500;
+    }
+
+    .assistant-message {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 1rem;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      min-height: 120px;
+      border: 1px solid var(--glass-border);
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) transparent;
+    }
+
+    .assistant-message::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .assistant-message::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .assistant-message::-webkit-scrollbar-thumb {
+      background-color: var(--accent);
+      border-radius: 3px;
+    }
+
+    .assistant-controls {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: auto;
+    }
+
+    .control-button {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: var(--transition);
+      box-shadow: 0 4px 20px rgba(79, 70, 229, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .control-button:hover {
+      transform: translateY(-2px) scale(1.05);
+      box-shadow: 0 6px 25px rgba(79, 70, 229, 0.4);
+    }
+
+    .control-button:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    .control-button i {
+      font-size: 1.5rem;
+    }
+
+    .control-button.secondary {
+      background: rgba(255, 255, 255, 0.1);
+      box-shadow: none;
+    }
+
+    .control-button.secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Pulse animation for listening state */
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.8; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .listening .control-button.primary {
+      animation: pulse 2s infinite;
+    }
+
+    /* Status indicators */
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 1rem;
+      background: rgba(255, 255, 255, 0.08);
+      margin-bottom: 1rem;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .status-dot.active {
+      background: var(--success);
+      box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2);
+    }
+
+    /* Typing indicator */
+    .typing {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      display: inline-block;
+      animation: typing 1.4s infinite both;
+    }
+
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-4px); }
+    }
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .app-container {
+        padding: 1rem;
+        gap: 1.5rem;
+      }
+
+      .main-content {
+        gap: 1.5rem;
+      }
+
+      .assistant-avatar {
+        width: 140px;
+        height: 140px;
+        margin-bottom: 1.5rem;
+      }
+
+      .assistant-message {
+        min-height: 100px;
+        padding: 1rem;
+      }
+
+      .control-button {
+        width: 48px;
+        height: 48px;
+      }
+    }
+    /* Form Elements */
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+
+    input, select, textarea, button {
+      width: 100%;
+      border-radius: 0.75rem;
+      border: 1px solid var(--glass-border);
+      padding: 0.75rem 1rem;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9375rem;
+      transition: var(--transition);
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+    }
+
+    input[type="file"] {
+      padding: 0.5rem;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.75rem;
+      border: none;
+      font-weight: 600;
+      font-size: 0.9375rem;
+      cursor: pointer;
+      transition: var(--transition);
+      text-align: center;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white;
+      box-shadow: 0 4px 20px rgba(79, 70, 229, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 25px rgba(79, 70, 229, 0.4);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      border: 1px solid var(--glass-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Status and Output */
+    .status {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      min-height: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status.success { color: var(--success); }
+    .status.error { color: var(--error); }
+    .status.warning { color: var(--accent-2); }
+
+    .output {
+      margin-top: 1rem;
+      padding: 1.25rem;
+      border-radius: 1rem;
+      border: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.03);
+      min-height: 120px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      color: var(--text);
+      white-space: pre-wrap;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) transparent;
+    }
+
+    .output::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .output::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .output::-webkit-scrollbar-thumb {
+      background-color: var(--accent);
+      border-radius: 3px;
+    }
+
+    /* Utility Classes */
+    .flex {
+      display: flex;
+    }
+
+    .items-center {
+      align-items: center;
+    }
+
+    .justify-between {
+      justify-content: space-between;
+    }
+
+    .gap-2 {
+      gap: 0.5rem;
+    }
+
+    .gap-3 {
+      gap: 0.75rem;
+    }
+
+    .gap-4 {
+      gap: 1rem;
+    }
+
+    .mt-2 {
+      margin-top: 0.5rem;
+    }
+
+    .mt-4 {
+      margin-top: 1rem;
+    }
+
+    .mt-6 {
+      margin-top: 1.5rem;
+    }
+
+    .mb-2 {
+      margin-bottom: 0.5rem;
+    }
+
+    .mb-4 {
+      margin-bottom: 1rem;
+    }
+
+    .w-full {
+      width: 100%;
+    }
+
+    .text-center {
+      text-align: center;
+    }
+
+    .text-sm {
+      font-size: 0.875rem;
+    }
+
+    .text-xs {
+      font-size: 0.75rem;
+    }
+
+    .font-medium {
+      font-weight: 500;
+    }
+
+    .font-semibold {
+      font-weight: 600;
+    }
+    /* Audio Player */
+    audio {
+      width: 100%;
+      margin-top: 1rem;
+      border-radius: 0.75rem;
+      height: 40px;
+    }
+
+    audio::-webkit-media-controls-panel {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 0.75rem;
+    }
+
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.75rem;
+      border-radius: 1rem;
+      background: rgba(79, 70, 229, 0.15);
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge.premium {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--accent-2);
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-in {
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(20px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    .slide-in {
+      animation: slideIn 0.3s ease-out forwards;
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      border-top-color: var(--accent);
+      animation: spin 1s ease-in-out infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
-  <div class="shell">
+  <div class="app-container">
     <header>
       <div>
-        <h1>Speech/Text Bridge</h1>
-        <div class="tagline">Transcribe speech and synthesize voice with OpenAI.</div>
+        <a href="/" class="logo">
+          <span class="logo-icon">N</span>
+          <span>Nova</span>
+        </a>
+        <div class="tagline">Your intelligent voice assistant</div>
       </div>
-      <span class="badge">Live demo</span>
+      <span class="badge premium">Beta</span>
     </header>
+
+    <main class="main-content">
+      <!-- Voice Assistant Panel -->
+      <div class="glass-panel voice-assistant">
+        <div class="status-indicator">
+          <span class="status-dot active"></span>
+          <span>Connected</span>
+        </div>
+        
+        <div class="assistant-avatar">
+          <img src="https://cdn3d.iconscout.com/3d/premium/thumb/ai-robot-6299538-5187871.png" alt="AI Assistant">
+        </div>
+        
+        <div class="assistant-status" id="assistant-status">Ready when you are</div>
+        
+        <div class="assistant-message" id="assistant-message">
+          Hello! I'm Nova, your AI assistant. Click the microphone to start speaking with me.
+        </div>
+        
+        <div class="assistant-controls">
+          <button class="control-button secondary" id="stop-button" title="Stop">
+            <i class="ri-stop-fill"></i>
+          </button>
+          <button class="control-button primary" id="mic-button" title="Start Listening">
+            <i class="ri-mic-line"></i>
+          </button>
+          <button class="control-button secondary" id="settings-button" title="Settings">
+            <i class="ri-settings-4-line"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Transcription Panel -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h3 class="panel-title">
+            <span class="panel-icon">
+              <i class="ri-mic-line"></i>
+            </span>
+            Speech to Text
+          </h3>
+          <div class="flex items-center gap-2">
+            <label class="status" id="stt-status">Ready</label>
+            <div class="recording-indicator" id="recording-indicator" style="display: none;">
+              <span class="pulse-dot"></span>
+              <span>Recording...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="audio-input">Upload audio file</label>
+          <input type="file" id="audio-input" accept="audio/*" class="w-full">
+        </div>
+
+        <div class="form-group">
+          <label for="language">Language (optional)</label>
+          <input type="text" id="language" placeholder="e.g., en, es, fr" class="w-full">
+        </div>
+
+        <button id="record-btn" class="btn btn-primary w-full mt-4">
+          <i class="ri-mic-line"></i> Start Recording
+        </button>
+        
+        <button id="transcribe-btn" class="btn btn-secondary w-full mt-2">
+          <i class="ri-file-text-line"></i> Transcribe Audio
+        </button>
+
+        <div class="output" id="transcript-output">Transcription will appear here...</div>
+      </div>
+    </main>
+
+    <footer class="text-center text-sm text-gray-400 mt-8">
+      <p>© 2023 Nova Voice Assistant. Powered by OpenAI.</p>
+    </footer>
 
     <div class="grid">
       <section class="card" id="stt-card">
@@ -210,7 +929,11 @@
     </div>
   </div>
 
+  <!-- Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+  
   <script>
+    // DOM Elements
     const audioInput = document.getElementById('audio-input');
     const recordBtn = document.getElementById('record-btn');
     const transcribeBtn = document.getElementById('transcribe-btn');
@@ -218,72 +941,183 @@
     const transcriptOutput = document.getElementById('transcript-output');
     const languageInput = document.getElementById('language');
     const recordingIndicator = document.getElementById('recording-indicator');
+    const micButton = document.getElementById('mic-button');
+    const stopButton = document.getElementById('stop-button');
+    const settingsButton = document.getElementById('settings-button');
+    const assistantStatus = document.getElementById('assistant-status');
+    const assistantMessage = document.getElementById('assistant-message');
 
-    const ttsText = document.getElementById('tts-text');
-    const voiceSelect = document.getElementById('voice');
-    const formatSelect = document.getElementById('format');
-    const ttsBtn = document.getElementById('tts-btn');
-    const ttsStatus = document.getElementById('tts-status');
-    const ttsAudio = document.getElementById('tts-audio');
-    const autoTts = document.getElementById('auto-tts');
-
-    const liveToggle = document.getElementById('live-toggle');
-    const liveStatus = document.getElementById('live-status');
-    const liveOutput = document.getElementById('live-output');
-    const liveLanguage = document.getElementById('live-language');
-    const liveIndicator = document.getElementById('live-indicator');
-
-    const preferredMime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : (MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''));
-
+    // Voice Assistant States
+    const ASSISTANT_STATES = {
+      IDLE: 'idle',
+      LISTENING: 'listening',
+      THINKING: 'thinking',
+      SPEAKING: 'speaking'
+    };
+    
+    let currentState = ASSISTANT_STATES.IDLE;
+    let recognition;
+    let speechSynthesis = window.speechSynthesis;
+    let currentUtterance = null;
     let mediaRecorder = null;
     let recordedChunks = [];
     let isRecording = false;
-
     let liveRecorder = null;
-    let isLive = false;
     let liveStream = null;
     let liveChunks = [];
-    let liveAudioCtx = null;
-    let liveAnalyser = null;
-    let liveDataArray = null;
-    let silenceTimer = null;
     let silenceInterval = null;
+    let isProcessing = false; // Prevent multiple simultaneous transcriptions
+    const preferredMime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 
+                         (MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : 
+                         (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/wav'));
 
-    const SILENCE_WINDOW_MS = 3000;
-    const SILENCE_CHECK_MS = 250;
-    const SILENCE_THRESHOLD = 0.01; // simple RMS threshold
+    // Status Functions
+    function setSttStatus(text, type = '') {
+      sttStatus.textContent = text;
+      sttStatus.className = 'status';
+      if (type) sttStatus.classList.add(type);
+    }
 
-    function setSttStatus(text) { sttStatus.textContent = text; }
-    function setTtsStatus(text) { ttsStatus.textContent = text; }
+    function setAssistantStatus(text, type = '') {
+      assistantStatus.textContent = text;
+      assistantStatus.className = 'assistant-status';
+      if (type) assistantStatus.classList.add(type);
+    }
 
+    function setAssistantMessage(text, isTyping = false) {
+      const messageEl = document.getElementById('assistant-message');
+      messageEl.textContent = text;
+      
+      if (isTyping) {
+        messageEl.innerHTML = text + ' <span class="typing"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></span>';
+      } else {
+        messageEl.textContent = text;
+      }
+      
+      // Auto-scroll to bottom
+      messageEl.scrollTop = messageEl.scrollHeight;
+    }
+
+    function setAssistantState(state) {
+      const avatar = document.querySelector('.assistant-avatar');
+      const micIcon = document.querySelector('#mic-button i');
+      
+      // Remove all state classes
+      document.body.classList.remove('listening', 'thinking', 'speaking');
+      
+      // Update current state
+      currentState = state;
+      
+      // Update UI based on state
+      switch (state) {
+        case ASSISTANT_STATES.LISTENING:
+          document.body.classList.add('listening');
+          setAssistantStatus('Listening...', 'listening');
+          micIcon.className = 'ri-mic-fill';
+          break;
+          
+        case ASSISTANT_STATES.THINKING:
+          document.body.classList.add('thinking');
+          setAssistantStatus('Thinking...', 'thinking');
+          setAssistantMessage(assistantMessage.textContent, true);
+          micIcon.className = 'ri-mic-line';
+          break;
+          
+        case ASSISTANT_STATES.SPEAKING:
+          document.body.classList.add('speaking');
+          setAssistantStatus('Speaking...', 'speaking');
+          micIcon.className = 'ri-mic-line';
+          break;
+          
+        default: // IDLE
+          setAssistantStatus('Ready when you are');
+          micIcon.className = 'ri-mic-line';
+      }
+    }
+
+    // Audio Recording Functions
     async function startRecording() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recordedChunks = [];
-        mediaRecorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-        mediaRecorder.onstop = () => { stream.getTracks().forEach(t => t.stop()); };
+        mediaRecorder = preferredMime ? 
+          new MediaRecorder(stream, { mimeType: preferredMime }) : 
+          new MediaRecorder(stream);
+          
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            recordedChunks.push(e.data);
+            console.log(`Collected audio chunk: ${e.data.size} bytes`);
+          }
+        };
+        
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(track => track.stop());
+          if (recordedChunks.length === 0) {
+            console.log('No audio data was recorded');
+            return;
+          }
+          
+          // Combine all recorded chunks into a single Blob
+          const audioBlob = new Blob(recordedChunks, { type: preferredMime || 'audio/wav' });
+          console.log(`Total recorded audio size: ${audioBlob.size} bytes`);
+          
+          // Create a file from the combined audio
+          const fileName = `recording_${new Date().toISOString()}${preferredMime ? '.' + preferredMime.split('/')[1] : '.wav'}`;
+          audioInput.files = createFileList(audioBlob, fileName);
+          
+          // Auto-transcribe after recording stops
+          await transcribeAudio();
+        };
+        
+        // Request data every second to avoid losing large chunks
+        mediaRecorder.start(1000);
+        
         mediaRecorder.start();
         isRecording = true;
-        recordBtn.textContent = 'Stop recording';
+        recordBtn.innerHTML = '<i class="ri-stop-line"></i> Stop Recording';
+        recordBtn.classList.add('recording');
         recordingIndicator.style.display = 'inline-flex';
-        setSttStatus('Recording...');
+        setSttStatus('Recording...', 'warning');
+        
+        // Set a timeout to stop recording after 5 minutes
+        setTimeout(() => {
+          if (isRecording) {
+            stopRecording();
+            setSttStatus('Recording stopped after 5 minutes', 'warning');
+          }
+        }, 5 * 60 * 1000);
+        
       } catch (err) {
-        console.error(err);
-        setSttStatus('Mic access denied. In browser address bar, enable microphone for this site and retry.');
+        console.error('Recording error:', err);
+        setSttStatus('Microphone access denied. Please allow microphone access to record.', 'error');
       }
+    }
+    
+    // Helper function to create a FileList from a Blob
+    function createFileList(blob, fileName) {
+      const file = new File([blob], fileName, { 
+        type: blob.type || 'audio/wav',
+        lastModified: Date.now()
+      });
+      
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      return dataTransfer.files;
     }
 
     function stopRecording() {
       if (mediaRecorder && isRecording) {
         mediaRecorder.stop();
-        isRecording = false;
-        recordBtn.textContent = 'Start recording';
-        recordingIndicator.style.display = 'none';
-        setSttStatus('Recording stopped. You can now transcribe.');
       }
+      isRecording = false;
+      recordBtn.innerHTML = '<i class="ri-mic-line"></i> Start Recording';
+      recordBtn.classList.remove('recording');
+      recordingIndicator.style.display = 'none';
+      setSttStatus('Recording stopped. Ready to transcribe.', 'success');
     }
 
+    // Event Listeners
     recordBtn.addEventListener('click', () => {
       if (!isRecording) {
         startRecording();
@@ -291,9 +1125,172 @@
         stopRecording();
       }
     });
+    
+    micButton.addEventListener('click', () => {
+      if (currentState === ASSISTANT_STATES.LISTENING) {
+        stopListening();
+      } else {
+        startListening();
+      }
+    });
+    
+    stopButton.addEventListener('click', () => {
+      if (currentState === ASSISTANT_STATES.SPEAKING) {
+        stopSpeaking();
+      } else if (currentState === ASSISTANT_STATES.THINKING) {
+        // Cancel any ongoing operations
+        setAssistantState(ASSISTANT_STATES.IDLE);
+        setAssistantMessage('Operation cancelled.');
+      }
+    });
+    
+    settingsButton.addEventListener('click', () => {
+      // Toggle settings panel (to be implemented)
+      setAssistantMessage('Settings panel will be available in the next update!');
+    });
 
+    // Speech Recognition Functions
+    function initializeSpeechRecognition() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        setAssistantStatus('Speech recognition not supported in this browser', 'error');
+        micButton.disabled = true;
+        return null;
+      }
+      
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      
+      recognition.onstart = () => {
+        setAssistantState(ASSISTANT_STATES.LISTENING);
+        setAssistantMessage('Listening...');
+      };
+      
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map(result => result[0])
+          .map(result => result.transcript)
+          .join('');
+          
+        setAssistantMessage(transcript || 'Could not understand audio');
+        
+        if (event.results[0].isFinal) {
+          processUserInput(transcript);
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setAssistantState(ASSISTANT_STATES.IDLE);
+        setAssistantMessage(`Error: ${event.error}`);
+      };
+      
+      recognition.onend = () => {
+        if (currentState === ASSISTANT_STATES.LISTENING) {
+          setAssistantState(ASSISTANT_STATES.THINKING);
+        }
+      };
+      
+      return recognition;
+    }
+    
+    function startListening() {
+      if (!recognition) {
+        recognition = initializeSpeechRecognition();
+        if (!recognition) return;
+      }
+      
+      try {
+        recognition.start();
+      } catch (err) {
+        console.error('Speech recognition error:', err);
+        setAssistantStatus('Error accessing microphone', 'error');
+        setAssistantMessage('Could not access your microphone. Please check permissions.');
+      }
+    }
+    
+    function stopListening() {
+      if (recognition) {
+        recognition.stop();
+      }
+      setAssistantState(ASSISTANT_STATES.IDLE);
+    }
+    
+    function stopSpeaking() {
+      if (speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+      }
+      setAssistantState(ASSISTANT_STATES.IDLE);
+    }
+    
+    function speak(text) {
+      if (speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+      }
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.voice = speechSynthesis.getVoices().find(voice => voice.name.includes('Google US English') || voice.lang === 'en-US');
+      
+      utterance.onstart = () => {
+        setAssistantState(ASSISTANT_STATES.SPEAKING);
+      };
+      
+      utterance.onend = () => {
+        if (currentState === ASSISTANT_STATES.SPEAKING) {
+          setAssistantState(ASSISTANT_STATES.IDLE);
+        }
+      };
+      
+      speechSynthesis.speak(utterance);
+      currentUtterance = utterance;
+    }
+    
+    async function processUserInput(text) {
+      if (!text.trim()) {
+        setAssistantMessage("I didn't catch that. Could you please repeat?");
+        speak("I didn't catch that. Could you please repeat?");
+        return;
+      }
+      
+      setAssistantState(ASSISTANT_STATES.THINKING);
+      
+      try {
+        // Here you would typically send the text to your backend for processing
+        // For now, we'll just echo the input
+        const response = await simulateAIResponse(text);
+        
+        // Display and speak the response
+        setAssistantMessage(response);
+        speak(response);
+        
+      } catch (error) {
+        console.error('Error processing input:', error);
+        const errorMsg = 'Sorry, I encountered an error. Please try again.';
+        setAssistantMessage(errorMsg);
+        speak(errorMsg);
+      }
+    }
+    
+    function simulateAIResponse(text) {
+      return new Promise((resolve) => {
+        // Simulate API call delay
+        setTimeout(() => {
+          const responses = [
+            `You said: "${text}"`,
+            `I heard: "${text}"`,
+            `Interesting! You mentioned: "${text}"`,
+            `Got it! You said: "${text}"`
+          ];
+          resolve(responses[Math.floor(Math.random() * responses.length)]);
+        }, 1000);
+      });
+    }
+    
+    // Transcription Function
     transcribeBtn.addEventListener('click', async () => {
-      setSttStatus('Uploading...');
+      setSttStatus('Uploading...', 'warning');
       transcriptOutput.textContent = '';
 
       let file = audioInput.files[0];
@@ -302,8 +1299,9 @@
         const ext = mime.includes('ogg') ? 'ogg' : (mime.includes('mp4') ? 'mp4' : 'webm');
         file = new File(recordedChunks, `recording.${ext}`, { type: mime });
       }
+      
       if (!file) {
-        setSttStatus('Please upload or record audio first.');
+        setSttStatus('Please upload or record audio first.', 'error');
         return;
       }
 
@@ -313,56 +1311,256 @@
       if (language) formData.append('language', language);
 
       try {
-        const response = await fetch('/speech-to-text', { method: 'POST', body: formData });
-        if (!response.ok) throw new Error(await response.text());
+        setSttStatus('Transcribing...', 'warning');
+        const response = await fetch('/speech-to-text', { 
+          method: 'POST', 
+          body: formData 
+        });
+        
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(error || 'Failed to transcribe audio');
+        }
+        
         const data = await response.json();
-        transcriptOutput.textContent = data.text || '(no text returned)';
-        setSttStatus('Done.');
+        const transcript = data.text || '(no text returned)';
+        
+        // Animate the text appearance
+        transcriptOutput.textContent = '';
+        let i = 0;
+        const speed = 10; // ms per character
+        
+        function typeWriter() {
+          if (i < transcript.length) {
+            transcriptOutput.textContent += transcript.charAt(i);
+            i++;
+            setTimeout(typeWriter, speed);
+          }
+        }
+        
+        typeWriter();
+        setSttStatus('Transcription complete', 'success');
+        
       } catch (err) {
-        console.error(err);
-        setSttStatus('Error: ' + err.message);
-        transcriptOutput.textContent = '-';
+        console.error('Transcription error:', err);
+        setSttStatus(`Error: ${err.message}`, 'error');
+        transcriptOutput.textContent = 'Failed to transcribe audio. Please try again.';
       }
     });
 
-    ttsBtn.addEventListener('click', async () => {
-      const text = ttsText.value.trim();
-      if (!text) {
-        setTtsStatus('Enter some text first.');
+    async function transcribeAudio() {
+      const file = audioInput.files[0];
+      if (!file) {
+        setSttStatus('Please record or upload an audio file first', 'error');
         return;
       }
-      setTtsStatus('Generating...');
-      ttsAudio.removeAttribute('src');
-      ttsAudio.load();
+
+      console.log(`Transcribing file: ${file.name}, size: ${file.size} bytes`);
+      
+      const formData = new FormData();
+      formData.append('audio_file', file);
+      
+      const lang = languageInput.value;
+      if (lang) formData.append('language', lang);
 
       try {
-        const response = await fetch('/text-to-speech', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            voice: voiceSelect.value,
-            audio_format: formatSelect.value,
-          }),
+        setSttStatus('Transcribing...', 'warning');
+        const startTime = Date.now();
+        const response = await fetch('/speech-to-text', { 
+          method: 'POST', 
+          body: formData,
+          headers: {
+            'Accept': 'application/json'
+          }
         });
-        if (!response.ok) throw new Error(await response.text());
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        ttsAudio.src = url;
-        ttsAudio.play();
-        setTtsStatus('Ready.');
+        
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Server responded with ${response.status}: ${error}`);
+        }
+        
+        const data = await response.json();
+        const transcript = data.text || '(no text returned)';
+        const duration = (Date.now() - startTime) / 1000;
+        console.log(`Transcription completed in ${duration.toFixed(2)}s: ${transcript}`);
+        
+        // Animate the text appearance
+        transcriptOutput.textContent = '';
+        let i = 0;
+        const speed = 10; // ms per character
+        
+        function typeWriter() {
+          if (i < transcript.length) {
+            transcriptOutput.textContent += transcript.charAt(i);
+            i++;
+            setTimeout(typeWriter, speed);
+          }
+        }
+        
+        typeWriter();
+        setSttStatus('Transcription complete', 'success');
+        
       } catch (err) {
-        console.error(err);
-        setTtsStatus('Error: ' + err.message);
+        console.error('Transcription error:', err);
+        setSttStatus(`Error: ${err.message}`, 'error');
+        transcriptOutput.textContent = 'Failed to transcribe audio. Please try again.';
+      }
+    }
+
+    // Text to Speech Function
+    async function convertTextToSpeech() {
+      const text = transcriptOutput.textContent.trim();
+      if (!text || text === 'Transcription will appear here...' || text === 'Failed to transcribe audio. Please try again.') {
+        setSttStatus('No valid text to convert to speech', 'error');
+        return;
+      }
+      
+      setSttStatus('Converting to speech...', 'warning');
+      
+      try {
+        // In a real app, you would send this to your backend for TTS processing
+        // For now, we'll use the Web Speech API directly
+        speak(text);
+        setSttStatus('Speaking...', 'success');
+        
+      } catch (err) {
+        console.error('TTS error:', err);
+        setSttStatus('Error converting to speech', 'error');
+      }
+    }
+    
+    // Add event listener for the transcript output click to read it out
+    transcriptOutput.addEventListener('click', convertTextToSpeech);
+    
+    // Add keyboard shortcut (Ctrl+Enter) to read the transcript
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        convertTextToSpeech();
       }
     });
+    
+    // Initialize the app when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initialize speech recognition
+      recognition = initializeSpeechRecognition();
+      
+      // Load voices for speech synthesis
+      if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = () => {
+          console.log('Voices loaded');
+        };
+      }
+      
+      // Show welcome message
+      setTimeout(() => {
+        setAssistantMessage('Hello! I\'m Nova, your AI assistant. Click the microphone to start speaking with me.');
+      }, 1000);
+      
+      // Add animation to the assistant avatar
+      const avatar = document.querySelector('.assistant-avatar');
+      avatar.style.animation = 'float 6s ease-in-out infinite';
+      
+      // Add hover effect to buttons
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(button => {
+        button.addEventListener('mouseenter', () => {
+          button.style.transform = 'translateY(-2px)';
+        });
+        
+        button.addEventListener('mouseleave', () => {
+          if (!button.classList.contains('recording')) {
+            button.style.transform = 'translateY(0)';
+          }
+        });
+      });
+    });
 
+    // Utility Functions
     function debounce(fn, delay) {
       let timer = null;
-      return (...args) => {
+      return function(...args) {
+        const context = this;
         clearTimeout(timer);
-        timer = setTimeout(() => fn(...args), delay);
+        timer = setTimeout(() => fn.apply(context, args), delay);
       };
+    }
+    
+    function throttle(fn, limit) {
+      let inThrottle;
+      return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+          fn.apply(context, args);
+          inThrottle = true;
+          setTimeout(() => inThrottle = false, limit);
+        }
+      };
+    }
+    
+    // Add a simple notification system
+    function showNotification(message, type = 'info') {
+      const notification = document.createElement('div');
+      notification.className = `notification ${type}`;
+      notification.textContent = message;
+      
+      document.body.appendChild(notification);
+      
+      // Trigger reflow
+      notification.offsetHeight;
+      
+      // Add show class
+      notification.classList.add('show');
+      
+      // Remove after delay
+      setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+    }
+    
+    // Add styles for notifications
+    const style = document.createElement('style');
+    style.textContent = `
+      .notification {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 12px 24px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        transform: translateY(100px);
+        opacity: 0;
+        transition: all 0.3s ease;
+        z-index: 1000;
+        max-width: 300px;
+      }
+      
+      .notification.show {
+        transform: translateY(0);
+        opacity: 1;
+      }
+      
+      .notification.success {
+        background: rgba(16, 185, 129, 0.9);
+      }
+      
+      .notification.error {
+        background: rgba(239, 68, 68, 0.9);
+      }
+      
+      .notification.warning {
+        background: rgba(245, 158, 11, 0.9);
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Add a simple loading spinner
+    function createSpinner() {
+      const spinner = document.createElement('div');
+      spinner.className = 'spinner';
+      return spinner;
     }
 
     const autoPlayTts = debounce(() => {
@@ -381,12 +1579,18 @@
 
         // Accumulate all chunks; we'll transcribe when stopped
         liveRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) liveChunks.push(e.data);
+          if (e.data.size > 0) {
+            console.log(`Live: Collected audio chunk: ${e.data.size} bytes`);
+            liveChunks.push(e.data);
+          }
         };
 
         liveRecorder.onstop = async () => {
           if (silenceInterval) clearInterval(silenceInterval);
+          if (isProcessing) return; // Skip if already processing
+          
           if (!liveChunks.length) {
+            console.log('Live: No audio data was recorded');
             liveStatus.textContent = 'No audio captured.';
             return;
           }
