@@ -1,0 +1,194 @@
+{
+  "metadata": {
+    "last_updated": "August 2024",
+    "provider": "Halifax Home Insurance",
+    "underwriter": "Lloyds Bank General Insurance Limited"
+  },
+  "coverage_types": {
+    "buildings_insurance": {
+      "description": "Covers the structure of your home and its outbuildings including roof, walls, windows, ceilings, and permanent fixtures",
+      "limits": {
+        "Bronze": {
+          "buildings": "Full rebuild cost",
+          "accidental_damage": "Not available",
+          "plants_in_garden": 1000,
+          "tracing_accessing_leak": 5000,
+          "blocked_drains": 1000,
+          "alternative_accommodation_owner": 100000,
+          "loss_of_rent_landlord": 100000,
+          "homeowner_legal_responsibility": 2000000,
+          "emergency_services_damage": "Full rebuild cost (trees/plants/shrubs: \u00a31,000)"
+        },
+        "Silver": {
+          "buildings": "Full rebuild cost",
+          "accidental_damage": "Included",
+          "plants_in_garden": 1000,
+          "tracing_accessing_leak": 5000,
+          "blocked_drains": 1000,
+          "alternative_accommodation_owner": 100000,
+          "loss_of_rent_landlord": "Not available",
+          "homeowner_legal_responsibility": 2000000,
+          "emergency_services_damage": "Full rebuild cost (trees/plants/shrubs: \u00a31,000)"
+        },
+        "Gold": {
+          "buildings": "Full rebuild cost",
+          "accidental_damage": "Included",
+          "plants_in_garden": 1000,
+          "tracing_accessing_leak": 5000,
+          "blocked_drains": 1000,
+          "alternative_accommodation_owner": 100000,
+          "loss_of_rent_landlord": "Not available",
+          "homeowner_legal_responsibility": 2000000,
+          "emergency_services_damage": "Full rebuild cost (trees/plants/shrubs: \u00a31,000)"
+        }
+      }
+    },
+    "contents_insurance": {
+      "description": "Covers items in your home including furniture, clothing, electronics, carpets and curtains",
+      "limits": {
+        "Bronze": {
+          "contents_total": 50000,
+          "accidental_damage": "Not available",
+          "frozen_food_damage": 500,
+          "visitors_belongings": 500,
+          "alternative_accommodation": 25000,
+          "alternative_accommodation_additional": true,
+          "money": 500,
+          "documents": 2500,
+          "contents_in_outbuildings": 5000,
+          "contents_in_open": 1000,
+          "trees_plants": 1000,
+          "metered_water": 1000,
+          "personal_legal_responsibility": 2000000,
+          "personal_legal_responsibility_additional": true,
+          "employer_responsibility_domestic_staff": 10000000,
+          "employer_responsibility_additional": true,
+          "protection_for_tenants": 10000,
+          "protection_for_tenants_additional": true,
+          "tenant_home_improvements": 5000,
+          "tenant_home_improvements_additional": true,
+          "emergency_services_damage": "Contents sum insured (trees/plants/shrubs: \u00a31,000)"
+        },
+        "Silver": {
+          "contents_total": 100000,
+          "accidental_damage": "Included",
+          "frozen_food_damage": 500,
+          "visitors_belongings": 500,
+          "alternative_accommodation": 25000,
+          "alternative_accommodation_additional": true,
+          "money": 500,
+          "documents": 2500,
+          "contents_in_outbuildings": 5000,
+          "contents_in_open": 1000,
+          "trees_plants": 1000,
+          "metered_water": 1000,
+          "personal_legal_responsibility": 2000000,
+          "personal_legal_responsibility_additional": true,
+          "employer_responsibility_domestic_staff": 10000000,
+          "employer_responsibility_additional": true,
+          "protection_for_tenants": 10000,
+          "protection_for_tenants_additional": true,
+          "tenant_home_improvements": 5000,
+          "tenant_home_improvements_additional": true,
+          "emergency_services_damage": "Contents sum insured (trees/plants/shrubs: \u00a31,000)"
+        },
+        "Gold": {
+          "contents_total": 250000,
+          "accidental_damage": "Included",
+          "frozen_food_damage": 500,
+          "visitors_belongings": 500,
+          "alternative_accommodation": 25000,
+          "alternative_accommodation_additional": true,
+          "money": 500,
+          "documents": 2500,
+          "contents_in_outbuildings": 5000,
+          "contents_in_open": 1000,
+          "trees_plants": 1000,
+          "metered_water": 1000,
+          "personal_legal_responsibility": 2000000,
+          "personal_legal_responsibility_additional": true,
+          "employer_responsibility_domestic_staff": 10000000,
+          "employer_responsibility_additional": true,
+          "protection_for_tenants": 10000,
+          "protection_for_tenants_additional": true,
+          "tenant_home_improvements": 5000,
+          "tenant_home_improvements_additional": true,
+          "emergency_services_damage": "Contents sum insured (trees/plants/shrubs: \u00a31,000)"
+        }
+      },
+      "specified_items": {
+        "description": "Items worth more than \u00a32,000 each (excluding home appliances and non-antique furniture)",
+        "individual_item_limit": 40000,
+        "total_specified_item_limit": 100000,
+        "coverage": "In home and optionally when temporarily away",
+        "note": "Additional to overall contents cover limit"
+      }
+    },
+    "legal_expenses": {
+      "description": "Expert legal support for civil legal disputes including contract disputes, personal injury, and clinical negligence",
+      "limits": {
+        "Bronze": "Not available",
+        "Silver": 50000,
+        "Gold": 50000
+      }
+    },
+    "optional_cover": {
+      "away_from_home": {
+        "description": "Covers items like rings, watches, bikes, laptops when taken away from home",
+        "limits": {
+          "Bronze": {
+            "items_lost_stolen": {
+              "min": 1000,
+              "max": 25000,
+              "customizable": true
+            },
+            "accidental_damage": "Not available",
+            "students_contents": 5000
+          },
+          "Silver": {
+            "items_lost_stolen": {
+              "min": 1000,
+              "max": 25000,
+              "customizable": true
+            },
+            "accidental_damage": "Included",
+            "students_contents": 5000
+          },
+          "Gold": {
+            "items_lost_stolen": {
+              "min": 1000,
+              "max": 25000,
+              "customizable": true
+            },
+            "accidental_damage": "Included",
+            "students_contents": 5000
+          }
+        }
+      },
+      "home_emergency": {
+        "description": "Emergency repairs including heating, plumbing, electrics, roofing, windows, doors and locks",
+        "limits": {
+          "Bronze": {
+            "total_cover": 1000,
+            "boiler_replacement": 500,
+            "uninhabitable_accommodation": 250
+          },
+          "Silver": {
+            "total_cover": 1000,
+            "boiler_replacement": 500,
+            "uninhabitable_accommodation": 250
+          },
+          "Gold": {
+            "total_cover": 1000,
+            "boiler_replacement": 500,
+            "uninhabitable_accommodation": 250
+          }
+        },
+        "note": "Limits are part of, not in addition to, overall Home Emergency cover limit"
+      }
+    }
+  },
+  "restrictions": {
+    "landlords": "Cannot choose Silver or Gold cover for Buildings insurance"
+  }
+}
