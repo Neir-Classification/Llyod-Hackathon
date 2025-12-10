@@ -26,6 +26,7 @@ export default function App() {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [animationState, setAnimationState] = useState<'idle' | 'listening' | 'thinking' | 'responding'>('idle');
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
   // Smooth level animation
   useEffect(() => {
@@ -85,7 +86,7 @@ export default function App() {
     updateGreeting();
   }, []);
 
-  // Start recording
+  // Start recording with silence detection
   const startRecording = async () => {
     console.log('startRecording called, ready:', ready, 'isRecording:', isRecording);
     
@@ -103,28 +104,145 @@ export default function App() {
         ? 'audio/ogg' 
         : '';
       
+      // Set up audio context for silence detection FIRST
+      const audioCtx = new AudioContext();
+      setAudioContext(audioCtx);
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.3;
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
       const recorder = mimeType 
-        ? new MediaRecorder(stream, { mimeType }) 
+        ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 }) 
         : new MediaRecorder(stream);
       
-      const chunks: Blob[] = [];
+      const allChunks: Blob[] = [];
       
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+        if (e.data.size > 0) {
+          allChunks.push(e.data);
+        }
       };
 
       recorder.onstop = async () => {
+        console.log('🛑 Recorder stopped - processing audio');
         stream.getTracks().forEach(t => t.stop());
-        setRecordedChunks(chunks);
+        if (audioCtx) {
+          audioCtx.close();
+        }
+        setRecordedChunks(allChunks);
         setMediaRecorder(null);
-        await processVoiceInput(chunks, mimeType || 'audio/webm');
+        setAudioContext(null);
+        
+        // Process full audio immediately
+        await processVoiceInput(allChunks, mimeType || 'audio/webm');
       };
 
+      // Start recording without timeslice for faster processing
       recorder.start();
+      console.log('🎙️ Recording started');
+      
       setMediaRecorder(recorder);
       setIsRecording(true);
       setAnimationState('listening');
       setStatusText('Listening...');
+      setTranscript('Listening...');
+
+      // Voice Activity Detection with RMS (Root Mean Square) method
+      let silenceStart: number | null = null;
+      let speechDetected = false;
+      let isChecking = true;
+      let audioLevelHistory: number[] = [];
+      const HISTORY_SIZE = 10;
+      
+      // Dynamic thresholds based on environment
+      let noiseFloor = 0;
+      let calibrationSamples = 0;
+      const CALIBRATION_FRAMES = 30;
+      
+      const SILENCE_DURATION = 1800; // 1.8 seconds
+      const SPEECH_MULTIPLIER = 3; // Speech must be 3x noise floor
+      const SILENCE_MULTIPLIER = 1.5; // Silence is 1.5x noise floor
+
+      const calculateRMS = () => {
+        analyser.getByteTimeDomainData(dataArray);
+        
+        let sumSquares = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const normalized = (dataArray[i] - 128) / 128; // Normalize to -1 to 1
+          sumSquares += normalized * normalized;
+        }
+        return Math.sqrt(sumSquares / bufferLength);
+      };
+
+      const checkAudioLevel = () => {
+        if (!isChecking || !recorder || recorder.state !== 'recording') {
+          return;
+        }
+
+        const rms = calculateRMS();
+        const level = rms * 100; // Scale to 0-100
+        
+        // Calibrate noise floor in first second
+        if (calibrationSamples < CALIBRATION_FRAMES) {
+          noiseFloor = Math.max(noiseFloor, level);
+          calibrationSamples++;
+          if (calibrationSamples === CALIBRATION_FRAMES) {
+            console.log('🎚️ Noise floor calibrated:', noiseFloor.toFixed(2));
+          }
+          requestAnimationFrame(checkAudioLevel);
+          return;
+        }
+        
+        // Keep rolling average
+        audioLevelHistory.push(level);
+        if (audioLevelHistory.length > HISTORY_SIZE) {
+          audioLevelHistory.shift();
+        }
+        
+        const avgLevel = audioLevelHistory.reduce((a, b) => a + b, 0) / audioLevelHistory.length;
+        const speechThreshold = noiseFloor * SPEECH_MULTIPLIER;
+        const silenceThreshold = noiseFloor * SILENCE_MULTIPLIER;
+
+        // Detect speech start
+        if (!speechDetected && avgLevel > speechThreshold) {
+          speechDetected = true;
+          console.log('🎤 Speech detected! Level:', avgLevel.toFixed(2), 'Threshold:', speechThreshold.toFixed(2));
+        }
+
+        // Detect silence after speech
+        if (speechDetected) {
+          if (avgLevel < silenceThreshold) {
+            if (silenceStart === null) {
+              silenceStart = Date.now();
+            } else {
+              const silenceDuration = Date.now() - silenceStart;
+              if (silenceDuration > SILENCE_DURATION) {
+                console.log('🛑 Auto-stop: Silence detected for', silenceDuration, 'ms');
+                isChecking = false;
+                if (recorder.state === 'recording') {
+                  recorder.stop();
+                  setIsRecording(false);
+                }
+                return;
+              }
+            }
+          } else {
+            silenceStart = null;
+          }
+        }
+
+        requestAnimationFrame(checkAudioLevel);
+      };
+
+      setTimeout(() => {
+        console.log('🎬 Starting Voice Activity Detection');
+        checkAudioLevel();
+      }, 100);
     } catch (err) {
       console.error('Microphone access error:', err);
       setStatusText('Microphone access denied');
@@ -215,29 +333,68 @@ export default function App() {
 
       // Generate and play speech
       setStatusText('Generating response...');
+      console.log('🔊 Requesting TTS for:', responseText);
+      
       const ttsRes = await fetch('/text-to-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: responseText, voice: 'coral', audio_format: 'mp3' })
+        body: JSON.stringify({ text: responseText, voice: 'alloy', audio_format: 'mp3' })
       });
 
-      if (!ttsRes.ok) throw new Error('TTS failed');
+      if (!ttsRes.ok) {
+        const errorText = await ttsRes.text();
+        console.error('TTS failed:', ttsRes.status, errorText);
+        throw new Error(`TTS failed: ${ttsRes.status}`);
+      }
+      
+      console.log('✅ TTS response received');
       const audioBlob = await ttsRes.blob();
+      console.log('📦 Audio blob size:', audioBlob.size, 'bytes');
+      
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
+      
+      // Set volume to ensure it's audible
+      audio.volume = 1.0;
 
       setAnimationState('responding');
-      audio.addEventListener('ended', () => {
+      
+      audio.addEventListener('ended', async () => {
+        console.log('🎵 Audio playback ended - returning to listening mode');
         setShowSubtitle(false);
         setAnimationState('idle');
-        setStatusText('Click to start');
         setTranscript('Waiting for input...');
         setResponse('Processing...');
         setIsProcessing(false);
+        URL.revokeObjectURL(audioUrl);
+        
+        // Automatically start listening again after a brief pause
+        setTimeout(async () => {
+          console.log('🔄 Auto-starting next recording...');
+          await startRecording();
+        }, 500);
+      });
+
+      audio.addEventListener('error', (e) => {
+        console.error('❌ Audio playback error:', e);
+        setStatusText('Audio error - Click to retry');
+        setIsProcessing(false);
+        setAnimationState('idle');
+        URL.revokeObjectURL(audioUrl);
       });
 
       setStatusText('Speaking...');
-      audio.play();
+      console.log('▶️ Playing audio...');
+      
+      try {
+        await audio.play();
+        console.log('✅ Audio playing successfully');
+      } catch (playErr) {
+        console.error('❌ Play failed:', playErr);
+        setStatusText('Audio play failed - check browser permissions');
+        setIsProcessing(false);
+        setAnimationState('idle');
+      }
     } catch (err: any) {
       console.error('Error sending query:', err);
       setStatusText('Error. Try again.');
@@ -319,28 +476,20 @@ export default function App() {
 
         {/* Status Text */}
         <p className="text-lg text-gray-400 mb-8 animate-fade-in font-light tracking-wide">
-          {isRecording ? 'Listening...' : statusText}
+          {isRecording ? 'Listening... (speak naturally, will auto-stop)' : statusText}
         </p>
 
-        {/* Bottom Controls */}
-        {isRecording && (
-          <div className="flex gap-4 items-center">
-            <button
-              onClick={stopRecording}
-              className="px-8 h-12 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all duration-300 font-medium"
-            >
-              Stop
-            </button>
-          </div>
-        )}
+        {/* Bottom Controls - No manual stop button needed */}
       </main>
 
       {/* Transcript Display - Always reserve space, fade in content */}
       <div className="fixed top-8 right-8 w-96 h-[280px] bg-black/80 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-2xl transition-opacity duration-300">
         <div className="mb-5">
-          <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">Transcript</div>
-          <div className={`bg-white/5 rounded-xl p-4 h-[80px] overflow-hidden text-[13px] leading-relaxed text-gray-200 font-light transition-all duration-500 ${
-            transcript === 'Waiting for input...' ? 'opacity-40 blur-sm' : 'opacity-100 blur-0'
+          <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">
+            Transcript
+          </div>
+          <div className={`bg-white/5 rounded-xl p-4 h-[80px] overflow-y-auto text-[13px] leading-relaxed text-gray-200 font-light transition-all duration-300 ${
+            transcript === 'Waiting for input...' || transcript === 'Listening...' ? 'opacity-40 blur-sm' : 'opacity-100 blur-0'
           }`}>
             {transcript}
           </div>
@@ -348,7 +497,7 @@ export default function App() {
         
         <div>
           <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">Response</div>
-          <div className={`bg-white/5 rounded-xl p-4 h-[80px] overflow-hidden text-[13px] leading-relaxed text-gray-200 font-light transition-all duration-500 ${
+          <div className={`bg-white/5 rounded-xl p-4 h-[80px] overflow-y-auto text-[13px] leading-relaxed text-gray-200 font-light transition-all duration-500 ${
             response === 'Processing...' ? 'opacity-40 blur-sm' : 'opacity-100 blur-0'
           }`}>
             {response}
