@@ -2,9 +2,19 @@ import { useEffect, useState, useMemo } from 'react';
 import Iridescence from './components/Iridescence';
 import { useAudioLevel } from './hooks/useAudioLevel';
 
+interface Citation {
+  id: number;
+  source: string;
+  policy_name: string;
+  page: number | string;
+  excerpt: string;
+  relevance_rank: number;
+}
+
 interface ChatMessage {
   text: string;
   role: 'user' | 'assistant';
+  citations?: Citation[];
 }
 
 export default function App() {
@@ -26,6 +36,8 @@ export default function App() {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [animationState, setAnimationState] = useState<'idle' | 'listening' | 'thinking' | 'responding'>('idle');
+  const [citations, setCitations] = useState<Citation[]>([]);
+  const [showCitations, setShowCitations] = useState(false);
 
   // Smooth level animation
   useEffect(() => {
@@ -205,9 +217,11 @@ export default function App() {
       if (!ragRes.ok) throw new Error('RAG query failed');
       const ragData = await ragRes.json();
       const responseText = ragData.response;
+      const responseCitations = ragData.citations || [];
 
       setResponse(responseText);
-      setChatMessages(prev => [...prev, { text: responseText, role: 'assistant' }]);
+      setCitations(responseCitations);
+      setChatMessages(prev => [...prev, { text: responseText, role: 'assistant', citations: responseCitations }]);
 
       // Show subtitle
       setSubtitle(responseText);
@@ -264,7 +278,7 @@ export default function App() {
 
       if (!res.ok) throw new Error('Query failed');
       const data = await res.json();
-      setChatMessages(prev => [...prev, { text: data.response, role: 'assistant' }]);
+      setChatMessages(prev => [...prev, { text: data.response, role: 'assistant', citations: data.citations || [] }]);
     } catch (err: any) {
       setChatMessages(prev => [...prev, { text: `Error: ${err.message}`, role: 'assistant' }]);
     }
@@ -284,6 +298,26 @@ export default function App() {
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
         </svg>
+      </button>
+      
+      {/* Citations button - Top Left below chat */}
+      <button
+        onClick={() => setShowCitations(true)}
+        className={`fixed top-24 left-8 w-12 h-12 rounded-full border transition-all duration-300 flex items-center justify-center z-30 ${
+          citations.length > 0 
+            ? 'bg-purple-500/20 hover:bg-purple-500/30 border-purple-500/30' 
+            : 'bg-white/10 hover:bg-white/15 border-white/10'
+        }`}
+        title="View sources & citations"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        {citations.length > 0 && (
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-purple-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
+            {citations.length}
+          </span>
+        )}
       </button>
       
       <main className="relative z-10 flex flex-col items-center justify-center w-full max-w-2xl px-5 py-10">
@@ -383,7 +417,7 @@ export default function App() {
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
               {chatMessages.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-fade-in`}>
                   <div className={`max-w-[75%] px-5 py-3 rounded-2xl text-[14px] leading-relaxed font-light ${
                     msg.role === 'user' 
                       ? 'bg-white text-black rounded-tr-sm' 
@@ -391,6 +425,28 @@ export default function App() {
                   }`}>
                     {msg.text}
                   </div>
+                  {/* Inline citations for assistant messages */}
+                  {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                    <div className="mt-2 max-w-[75%]">
+                      <div className="flex flex-wrap gap-2">
+                        {msg.citations.map((citation) => (
+                          <button
+                            key={citation.id}
+                            onClick={() => {
+                              setCitations(msg.citations || []);
+                              setShowCitations(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 rounded-lg text-[11px] text-purple-300 transition-all"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Page {citation.page}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -417,6 +473,87 @@ export default function App() {
                 Send
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Citations Modal */}
+      {showCitations && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 animate-fade-in">
+          <div className="w-full max-w-2xl bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-3xl flex flex-col max-h-[85vh] animate-fade-in mx-4">
+            {/* Citations Header */}
+            <div className="flex justify-between items-center px-6 py-5 border-b border-white/10">
+              <div>
+                <h2 className="text-xl font-light tracking-tight">Sources & Citations</h2>
+                <p className="text-[12px] text-gray-500 mt-1">Data used to generate the response</p>
+              </div>
+              <button
+                onClick={() => setShowCitations(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-xl font-light"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Citations List */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+              {citations.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm">No citations available yet.</p>
+                  <p className="text-xs mt-1">Ask a question to see source references.</p>
+                </div>
+              ) : (
+                citations.map((citation) => (
+                  <div 
+                    key={citation.id} 
+                    className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:bg-white/10 transition-all"
+                  >
+                    {/* Citation Header */}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                          <span className="text-purple-300 text-sm font-medium">{citation.id}</span>
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-medium text-white">{citation.source}</h3>
+                          <p className="text-[11px] text-gray-500">Page {citation.page}</p>
+                        </div>
+                      </div>
+                      <span className="px-2 py-1 bg-green-500/20 text-green-400 text-[10px] rounded-full font-medium">
+                        Rank #{citation.relevance_rank}
+                      </span>
+                    </div>
+                    
+                    {/* Citation Excerpt */}
+                    <div className="bg-black/30 rounded-xl p-4">
+                      <p className="text-[12px] text-gray-300 leading-relaxed font-light italic">
+                        "{citation.excerpt}"
+                      </p>
+                    </div>
+                    
+                    {/* Citation Footer */}
+                    <div className="mt-3 flex items-center gap-2 text-[10px] text-gray-500">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Policy: {citation.policy_name}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Citations Footer */}
+            {citations.length > 0 && (
+              <div className="px-6 py-4 border-t border-white/10 bg-white/5">
+                <p className="text-[11px] text-gray-500 text-center">
+                  💡 These excerpts from your policy documents were used to generate the response above.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

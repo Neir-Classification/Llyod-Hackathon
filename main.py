@@ -297,7 +297,7 @@ async def root():
 
 @app.post("/rag-query")
 async def rag_query(body: RAGQueryRequest) -> JSONResponse:
-    """Query the RAG pipeline and return a tone-adjusted response."""
+    """Query the RAG pipeline and return a tone-adjusted response with citations."""
     try:
         if not body.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -313,12 +313,37 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         # Generate tone-adjusted response
         response_text = adjust_tone_with_llm(results, body.query, body.tone)
         
-        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}'")
+        # Build citations for explainability
+        citations = []
+        for idx, (doc, score) in enumerate(results, start=1):
+            policy_name = doc.metadata.get("policy_name", "Unknown Document")
+            page_number = doc.metadata.get("page_number", doc.metadata.get("page", "N/A"))
+            # Get source file name
+            source_path = doc.metadata.get("source", "")
+            source_file = Path(source_path).name if source_path else policy_name
+            
+            # Create a clean excerpt (first 300 chars)
+            excerpt = doc.page_content.strip()[:300]
+            if len(doc.page_content.strip()) > 300:
+                excerpt += "..."
+            
+            citations.append({
+                "id": idx,
+                "source": source_file,
+                "policy_name": policy_name,
+                "page": page_number + 1 if isinstance(page_number, int) else page_number,
+                "excerpt": excerpt,
+                "relevance_rank": idx
+            })
+        
+        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}' | Citations: {len(citations)}")
         
         return JSONResponse({
             "response": response_text,
             "tone": body.tone,
-            "query": body.query
+            "query": body.query,
+            "citations": citations,
+            "sources_used": len(citations)
         })
     except Exception as exc:
         logger.exception("RAG query failed")
