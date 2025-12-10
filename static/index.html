@@ -6,7 +6,7 @@
   <title>Policy Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=SF+Pro+Display:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * {
       margin: 0;
@@ -15,30 +15,38 @@
     }
 
     :root {
-      --primary: #3b82f6;
-      --secondary: #1f2937;
-      --bg-dark: #0f172a;
-      --bg-darker: #030712;
-      --border: #1e293b;
-      --text-primary: #f1f5f9;
-      --text-secondary: #cbd5e1;
-      --text-muted: #64748b;
-      --accent: #06b6d4;
-      --success: #10b981;
+      --black: #000000;
+      --white: #ffffff;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --accent-blue: #0071e3;
+      --accent-cyan: #06c;
+      --accent-purple: #8e44ad;
+      --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
 
     body {
-      font-family: 'Inter', sans-serif;
-      background: linear-gradient(135deg, var(--bg-darker) 0%, #1a1f3a 50%, var(--bg-dark) 100%);
-      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+      background: var(--black);
+      color: var(--white);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       position: relative;
       overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Animated gradient background */
+    /* Subtle ambient background */
     body::before {
       content: '';
       position: fixed;
@@ -46,8 +54,7 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-                  radial-gradient(circle at 80% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 50%);
+      background: radial-gradient(circle at 50% 50%, rgba(102, 126, 234, 0.03) 0%, transparent 70%);
       pointer-events: none;
       z-index: 0;
     }
@@ -70,7 +77,7 @@
       align-items: center;
       justify-content: center;
       width: 100%;
-      max-width: 500px;
+      max-width: 600px;
       text-align: center;
       opacity: 1;
       transition: opacity 0.6s ease;
@@ -82,62 +89,253 @@
     }
 
     .greeting {
-      margin-bottom: 20px;
-      animation: fadeIn 0.8s ease;
+      margin-bottom: 60px;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .greeting-text {
-      font-size: 28px;
-      font-weight: 700;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--primary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      font-size: 40px;
+      font-weight: 600;
+      color: var(--white);
+      letter-spacing: -0.5px;
       margin-bottom: 8px;
     }
 
     .greeting-time {
-      font-size: 14px;
-      color: var(--text-muted);
-      font-weight: 500;
+      font-size: 15px;
+      color: var(--gray-500);
+      font-weight: 400;
+      letter-spacing: 0.3px;
     }
 
-    /* Waveform Listening Animation */
+    /* Animated Orb - Audio Reactive */
     .listening-container {
-      margin: 60px 0 40px;
-      height: 180px;
+      margin: 0 0 60px;
+      height: 280px;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      animation: scaleIn 0.8s ease 0.3s both;
+      position: relative;
+      animation: scaleIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
     }
 
-    .waveform-bar {
-      width: 4px;
-      background: linear-gradient(180deg, var(--accent) 0%, var(--primary) 100%);
-      border-radius: 2px;
-      opacity: 0.6;
-      animation: wave 0.8s ease-in-out infinite;
+    .orb-container {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      filter: blur(0);
     }
 
-    .waveform-bar:nth-child(1) { height: 40px; animation-delay: 0s; }
-    .waveform-bar:nth-child(2) { height: 60px; animation-delay: 0.1s; }
-    .waveform-bar:nth-child(3) { height: 80px; animation-delay: 0.2s; }
-    .waveform-bar:nth-child(4) { height: 90px; animation-delay: 0.3s; }
-    .waveform-bar:nth-child(5) { height: 85px; animation-delay: 0.2s; }
-    .waveform-bar:nth-child(6) { height: 70px; animation-delay: 0.1s; }
-    .waveform-bar:nth-child(7) { height: 45px; animation-delay: 0s; }
+    /* Main orb with fluid morphing */
+    .orb {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #667eea 100%);
+      background-size: 200% 200%;
+      box-shadow: 
+        0 0 80px rgba(102, 126, 234, 0.5),
+        0 0 120px rgba(118, 75, 162, 0.3),
+        inset 0 0 60px rgba(255, 255, 255, 0.1);
+      position: relative;
+      overflow: hidden;
+      will-change: transform, box-shadow, border-radius;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
 
-    @keyframes wave {
-      0%, 100% { height: 40%; }
-      50% { height: 100%; }
+    /* Idle state - gentle breathing */
+    .orb.idle {
+      animation: orbBreath 4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite,
+                 gradientShift 8s ease infinite;
+    }
+
+    /* Listening state - audio reactive (controlled by JS) */
+    .orb.listening {
+      animation: gradientShift 6s ease infinite;
+    }
+
+    /* Processing state - pulsing */
+    .orb.processing {
+      animation: orbProcess 1.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite,
+                 gradientShift 4s ease infinite;
+    }
+
+    /* Inner glow layers */
+    .orb::before {
+      content: '';
+      position: absolute;
+      top: 10%;
+      left: 10%;
+      width: 80%;
+      height: 80%;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, 
+        rgba(255, 255, 255, 0.4) 0%, 
+        rgba(255, 255, 255, 0.1) 40%,
+        transparent 70%);
+      animation: glowShift 3s ease-in-out infinite;
+      will-change: transform;
+    }
+
+    /* Shimmer effect */
+    .orb::after {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: linear-gradient(
+        45deg,
+        transparent 30%,
+        rgba(255, 255, 255, 0.15) 50%,
+        transparent 70%
+      );
+      animation: shimmer 4s linear infinite;
+    }
+
+    /* Outer rings - audio reactive blobs */
+    .orb-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      border: 1.5px solid rgba(102, 126, 234, 0.3);
+      will-change: transform, opacity;
+      transition: all 0.1s ease-out;
+    }
+
+    .orb-ring:nth-child(2) {
+      width: 200px;
+      height: 200px;
+      border-color: rgba(102, 126, 234, 0.4);
+    }
+
+    .orb-ring:nth-child(3) {
+      width: 230px;
+      height: 230px;
+      border-color: rgba(118, 75, 162, 0.35);
+    }
+
+    .orb-ring:nth-child(4) {
+      width: 260px;
+      height: 260px;
+      border-color: rgba(102, 126, 234, 0.3);
+    }
+
+    .orb-ring:nth-child(5) {
+      width: 290px;
+      height: 290px;
+      border-color: rgba(118, 75, 162, 0.25);
+    }
+
+    /* Idle ring animation */
+    .orb-ring.idle-animation {
+      animation: ringExpand 4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+    }
+
+    .orb-ring.idle-animation:nth-child(2) {
+      animation-delay: 0s;
+    }
+
+    .orb-ring.idle-animation:nth-child(3) {
+      animation-delay: 0.8s;
+    }
+
+    .orb-ring.idle-animation:nth-child(4) {
+      animation-delay: 1.6s;
+    }
+
+    .orb-ring.idle-animation:nth-child(5) {
+      animation-delay: 2.4s;
+    }
+
+    /* Fluid Animations */
+    @keyframes orbBreath {
+      0%, 100% {
+        transform: scale(1);
+        border-radius: 50%;
+      }
+      25% {
+        transform: scale(1.03);
+        border-radius: 48% 52% 51% 49% / 50% 48% 52% 50%;
+      }
+      50% {
+        transform: scale(1.06);
+        border-radius: 51% 49% 50% 50% / 49% 51% 49% 51%;
+      }
+      75% {
+        transform: scale(1.03);
+        border-radius: 50% 50% 48% 52% / 51% 50% 50% 49%;
+      }
+    }
+
+    @keyframes orbProcess {
+      0%, 100% {
+        transform: scale(1) rotate(0deg);
+        box-shadow: 
+          0 0 80px rgba(102, 126, 234, 0.6),
+          0 0 120px rgba(118, 75, 162, 0.35);
+      }
+      50% {
+        transform: scale(1.12) rotate(180deg);
+        box-shadow: 
+          0 0 120px rgba(102, 126, 234, 0.8),
+          0 0 180px rgba(118, 75, 162, 0.5);
+      }
+    }
+
+    @keyframes ringExpand {
+      0% {
+        transform: translate(-50%, -50%) scale(0.9);
+        opacity: 0;
+      }
+      10% {
+        opacity: 0.6;
+      }
+      50% {
+        opacity: 0.3;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(1.3);
+        opacity: 0;
+      }
+    }
+
+    @keyframes gradientShift {
+      0%, 100% {
+        background-position: 0% 50%;
+      }
+      50% {
+        background-position: 100% 50%;
+      }
+    }
+
+    @keyframes glowShift {
+      0%, 100% {
+        transform: translate(0, 0);
+        opacity: 1;
+      }
+      50% {
+        transform: translate(10%, 10%);
+        opacity: 0.7;
+      }
+    }
+
+    @keyframes shimmer {
+      0% {
+        transform: translateX(-100%) translateY(-100%) rotate(45deg);
+      }
+      100% {
+        transform: translateX(100%) translateY(100%) rotate(45deg);
+      }
     }
 
     @keyframes scaleIn {
       from {
         opacity: 0;
-        transform: scale(0.9);
+        transform: scale(0.8);
       }
       to {
         opacity: 1;
@@ -145,10 +343,10 @@
       }
     }
 
-    @keyframes fadeIn {
+    @keyframes fadeInUp {
       from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(20px);
       }
       to {
         opacity: 1;
@@ -157,68 +355,71 @@
     }
 
     .status-text {
-      font-size: 16px;
-      color: var(--text-secondary);
-      margin-bottom: 20px;
-      animation: fadeIn 0.8s ease 0.6s both;
+      font-size: 17px;
+      color: var(--gray-400);
+      font-weight: 400;
+      letter-spacing: 0.2px;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
     }
 
     .status-text.listening {
-      color: var(--accent);
-      font-weight: 600;
+      color: var(--white);
+      font-weight: 500;
     }
 
-    /* Input/Output Display */
+    /* Input/Output Display - Minimalist Apple Style */
     .transcript-display {
       position: fixed;
-      top: 20px;
-      right: 20px;
-      width: 320px;
-      max-height: 300px;
-      background: rgba(15, 23, 42, 0.95);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      top: 30px;
+      right: 30px;
+      width: 340px;
+      max-height: 280px;
+      background: rgba(17, 17, 17, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 20px;
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
       z-index: 15;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      line-height: 1.5;
+      font-size: 13px;
+      line-height: 1.6;
     }
 
     .transcript-label {
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 8px;
+      font-weight: 600;
+      color: var(--gray-400);
+      margin-bottom: 10px;
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
     }
 
     .transcript-input {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(6, 182, 212, 0.3);
-      border-radius: 6px;
-      padding: 8px;
-      margin-bottom: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 16px;
       min-height: 50px;
       max-height: 80px;
       overflow-y: auto;
-      color: var(--text-secondary);
+      color: var(--white);
       word-break: break-word;
+      font-weight: 400;
     }
 
     .transcript-output {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(59, 130, 246, 0.3);
-      border-radius: 6px;
-      padding: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 12px;
       min-height: 50px;
       max-height: 80px;
       overflow-y: auto;
-      color: var(--text-primary);
+      color: var(--white);
       word-break: break-word;
+      font-weight: 400;
     }
 
     .transcript-display::-webkit-scrollbar {
@@ -230,14 +431,14 @@
     }
 
     .transcript-display::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.2);
       border-radius: 2px;
     }
 
-    /* Subtitle Display */
+    /* Subtitle Display - Apple TV Style */
     .subtitle-area {
       position: fixed;
-      bottom: 100px;
+      bottom: 120px;
       left: 50%;
       transform: translateX(-50%);
       max-width: 80%;
@@ -250,95 +451,188 @@
     }
 
     .subtitle-box {
-      background: rgba(15, 23, 42, 0.95);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px 24px;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      background: rgba(17, 17, 17, 0.90);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 16px 28px;
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     }
 
     .subtitle-text {
-      font-size: 15px;
-      line-height: 1.6;
-      color: var(--text-primary);
-      font-weight: 500;
-      animation: fadeIn 0.4s ease;
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--white);
+      font-weight: 400;
+      animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .subtitle-text.fading {
-      animation: fadeOut 0.4s ease;
+      animation: fadeOut 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     @keyframes fadeOut {
       from {
         opacity: 1;
+        transform: translateY(0);
       }
       to {
         opacity: 0;
+        transform: translateY(10px);
       }
     }
 
-    /* Bottom Controls */
+    /* Bottom Controls - Apple.com Style */
     .bottom-controls {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      padding: 20px;
-      background: linear-gradient(180deg, transparent 0%, rgba(15, 23, 42, 0.9) 50%, var(--bg-dark) 100%);
-      border-top: 1px solid var(--border);
+      padding: 28px 24px 32px;
+      background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.4) 20%, rgba(0, 0, 0, 0.98) 100%);
+      border-top: 0.5px solid rgba(255, 255, 255, 0.06);
       display: flex;
       justify-content: center;
-      gap: 12px;
+      align-items: center;
+      gap: 16px;
       z-index: 20;
+      backdrop-filter: blur(30px) saturate(180%);
+      -webkit-backdrop-filter: blur(30px) saturate(180%);
     }
 
     .control-btn {
-      padding: 12px 24px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-primary);
-      font-size: 14px;
-      font-weight: 600;
-      border-radius: 8px;
+      padding: 0 32px;
+      height: 48px;
+      border: none;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--white);
+      font-size: 15px;
+      font-weight: 500;
+      border-radius: 980px;
       cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: 'Inter', sans-serif;
+      transition: all 0.4s cubic-bezier(0.28, 0.11, 0.32, 1);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      letter-spacing: -0.2px;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 
+        inset 0 0 0 0.5px rgba(255, 255, 255, 0.08),
+        0 1px 3px rgba(0, 0, 0, 0.2);
+      will-change: transform, background, box-shadow;
+    }
+
+    .control-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 980px;
+      padding: 0.5px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask-composite: exclude;
+      opacity: 0;
+      transition: opacity 0.4s cubic-bezier(0.28, 0.11, 0.32, 1);
     }
 
     .control-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: var(--accent);
+      background: rgba(255, 255, 255, 0.15);
+      box-shadow: 
+        inset 0 0 0 0.5px rgba(255, 255, 255, 0.15),
+        0 4px 12px rgba(0, 0, 0, 0.3),
+        0 0 20px rgba(102, 126, 234, 0.15);
+      transform: translateY(-1px) scale(1.02);
     }
 
-    .control-btn.primary {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-      border: none;
-      box-shadow: 0 10px 30px rgba(59, 130, 246, 0.2);
-    }
-
-    .control-btn.primary:hover {
-      box-shadow: 0 15px 40px rgba(59, 130, 246, 0.3);
-      transform: translateY(-2px);
+    .control-btn:hover::before {
+      opacity: 1;
     }
 
     .control-btn:active {
-      transform: translateY(0);
+      transform: translateY(0) scale(0.98);
+      transition: all 0.1s cubic-bezier(0.28, 0.11, 0.32, 1);
     }
 
-    /* Chat Modal */
+    /* Primary button - Apple Blue */
+    .control-btn.primary {
+      background: var(--white);
+      color: var(--black);
+      font-weight: 600;
+      box-shadow: 
+        inset 0 0 0 0.5px rgba(0, 0, 0, 0.04),
+        0 2px 8px rgba(0, 0, 0, 0.15),
+        0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    .control-btn.primary::before {
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.01));
+    }
+
+    .control-btn.primary:hover {
+      background: var(--gray-100);
+      box-shadow: 
+        inset 0 0 0 0.5px rgba(0, 0, 0, 0.06),
+        0 4px 16px rgba(0, 0, 0, 0.2),
+        0 0 30px rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px) scale(1.02);
+    }
+
+    .control-btn.primary:active {
+      background: var(--gray-200);
+      transform: translateY(0) scale(0.98);
+    }
+
+    /* Stop button - Red accent */
+    .control-btn.danger {
+      background: rgba(255, 59, 48, 0.12);
+      color: #ff3b30;
+      font-weight: 500;
+      box-shadow: 
+        inset 0 0 0 0.5px rgba(255, 59, 48, 0.2),
+        0 2px 8px rgba(255, 59, 48, 0.1);
+    }
+
+    .control-btn.danger:hover {
+      background: rgba(255, 59, 48, 0.2);
+      box-shadow: 
+        inset 0 0 0 0.5px rgba(255, 59, 48, 0.3),
+        0 4px 12px rgba(255, 59, 48, 0.2),
+        0 0 20px rgba(255, 59, 48, 0.15);
+    }
+
+    /* Minimal icon-only style for chat button */
+    .control-btn.minimal {
+      padding: 0;
+      width: 48px;
+      height: 48px;
+      background: rgba(255, 255, 255, 0.06);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .control-btn.minimal:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Chat Modal - Apple Messages Style */
     .chat-modal {
       position: fixed;
       inset: 0;
-      background: rgba(3, 7, 18, 0.8);
-      backdrop-filter: blur(4px);
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       display: none;
       flex-direction: column;
       align-items: center;
       justify-content: flex-end;
       z-index: 50;
-      animation: fadeIn 0.3s ease;
+      animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .chat-modal.active {
@@ -347,17 +641,18 @@
 
     .chat-panel {
       width: 100%;
-      max-width: 600px;
-      background: var(--bg-dark);
-      border: 1px solid var(--border);
+      max-width: 700px;
+      background: rgba(17, 17, 17, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-bottom: none;
-      border-radius: 20px 20px 0 0;
-      border-top: 1px solid var(--border);
+      border-radius: 24px 24px 0 0;
       display: flex;
       flex-direction: column;
       height: 85vh;
-      max-height: 600px;
-      animation: slideUp 0.4s ease;
+      max-height: 700px;
+      animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
     }
 
     @keyframes slideUp {
@@ -372,35 +667,43 @@
     }
 
     .chat-header {
-      padding: 20px;
-      border-bottom: 1px solid var(--border);
+      padding: 24px 24px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
 
     .chat-header h2 {
-      font-size: 18px;
-      font-weight: 700;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
     }
 
     .chat-close {
-      background: none;
+      background: rgba(255, 255, 255, 0.1);
       border: none;
-      color: var(--text-secondary);
-      font-size: 24px;
+      color: var(--white);
+      font-size: 20px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
       cursor: pointer;
-      transition: color 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .chat-close:hover {
-      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
     }
 
     .chat-messages {
       flex: 1;
       overflow-y: auto;
-      padding: 20px;
+      padding: 24px;
       display: flex;
       flex-direction: column;
       gap: 16px;
@@ -409,7 +712,7 @@
     .chat-message {
       display: flex;
       gap: 12px;
-      animation: fadeIn 0.3s ease;
+      animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .chat-message.user {
@@ -417,69 +720,79 @@
     }
 
     .chat-bubble {
-      max-width: 70%;
-      padding: 12px 16px;
-      border-radius: 12px;
+      max-width: 75%;
+      padding: 14px 18px;
+      border-radius: 20px;
       line-height: 1.5;
-      font-size: 14px;
+      font-size: 15px;
       word-wrap: break-word;
     }
 
     .chat-message.assistant .chat-bubble {
-      background: rgba(59, 130, 246, 0.15);
-      border: 1px solid rgba(59, 130, 246, 0.3);
-      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--white);
+      border-top-left-radius: 4px;
     }
 
     .chat-message.user .chat-bubble {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-      color: white;
+      background: var(--white);
+      color: var(--black);
+      border-top-right-radius: 4px;
+      font-weight: 400;
     }
 
     .chat-input-area {
-      padding: 16px;
-      border-top: 1px solid var(--border);
+      padding: 16px 20px 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
-      gap: 8px;
+      gap: 10px;
+      align-items: flex-end;
     }
 
     .chat-input {
       flex: 1;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border);
-      color: var(--text-primary);
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: 'Inter', sans-serif;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--white);
+      padding: 12px 16px;
+      border-radius: 20px;
+      font-size: 15px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
       resize: none;
-      max-height: 100px;
+      max-height: 120px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .chat-input:focus {
       outline: none;
-      border-color: var(--accent);
-      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .chat-input::placeholder {
+      color: var(--gray-500);
     }
 
     .chat-send {
-      padding: 10px 16px;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      padding: 12px 20px;
+      background: var(--white);
       border: none;
-      color: white;
-      border-radius: 8px;
+      color: var(--black);
+      border-radius: 980px;
       cursor: pointer;
       font-weight: 600;
-      transition: all 0.2s ease;
+      font-size: 15px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      letter-spacing: -0.2px;
     }
 
     .chat-send:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3);
+      background: var(--gray-100);
+      transform: scale(1.02);
     }
 
     .chat-send:active {
-      transform: translateY(0);
+      transform: scale(0.98);
     }
 
     /* Scrollbar */
@@ -492,12 +805,12 @@
     }
 
     .chat-messages::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.15);
       border-radius: 3px;
     }
 
     .chat-messages::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.25);
     }
 
     /* Loading pulse */
@@ -510,33 +823,37 @@
       50% { opacity: 0.5; }
     }
 
-    @media (max-width: 640px) {
-      main {
-        padding: 20px;
-      }
-
+    /* Responsive */
+    @media (max-width: 768px) {
       .greeting-text {
-        font-size: 24px;
+        font-size: 32px;
       }
 
-      .listening-container {
-        height: 120px;
+      .orb-container {
+        width: 140px;
+        height: 140px;
+      }
+
+      .transcript-display {
+        top: 20px;
+        right: 20px;
+        width: calc(100% - 40px);
+        max-width: 340px;
       }
 
       .chat-panel {
         max-height: none;
-        border-radius: 16px 16px 0 0;
+        border-radius: 20px 20px 0 0;
       }
 
       .bottom-controls {
         gap: 8px;
-        padding: 12px;
+        padding: 16px;
       }
 
       .control-btn {
-        padding: 10px 16px;
-        font-size: 13px;
-        flex: 1;
+        padding: 12px 20px;
+        font-size: 14px;
       }
     }
   </style>
@@ -551,13 +868,13 @@
       </div>
 
       <div class="listening-container" id="listeningContainer">
-        <div class="waveform-bar"></div>
-        <div class="waveform-bar"></div>
-        <div class="waveform-bar"></div>
-        <div class="waveform-bar"></div>
-        <div class="waveform-bar"></div>
-        <div class="waveform-bar"></div>
-        <div class="waveform-bar"></div>
+        <div class="orb-container">
+          <div class="orb listening" id="orbElement"></div>
+          <div class="orb-ring"></div>
+          <div class="orb-ring"></div>
+          <div class="orb-ring"></div>
+          <div class="orb-ring"></div>
+        </div>
       </div>
 
       <div class="status-text listening" id="statusText">Listening...</div>
@@ -582,10 +899,10 @@
 
   <!-- Bottom Controls -->
   <div class="bottom-controls">
-    <button class="control-btn" id="stopBtn" style="display:none;">⏹️ Stop</button>
-    <button class="control-btn primary" id="sendBtn" style="display:none;">✓ Send Query</button>
-    <button class="control-btn primary" id="restartBtn" style="display:none;">🎤 Start talking</button>
-    <button class="control-btn" id="chatBtn">💬 Can't talk now</button>
+    <button class="control-btn danger" id="stopBtn" style="display:none;">Stop</button>
+    <button class="control-btn primary" id="sendBtn" style="display:none;">Send Query</button>
+    <button class="control-btn primary" id="restartBtn" style="display:none;">Start Listening</button>
+    <button class="control-btn minimal" id="chatBtn" title="Can't talk now">💬</button>
   </div>
 
   <!-- Chat Modal -->
@@ -622,6 +939,8 @@
     const listeningContainer = document.getElementById('listeningContainer');
     const transcriptInput = document.getElementById('transcriptInput');
     const transcriptOutput = document.getElementById('transcriptOutput');
+    const orbElement = document.getElementById('orbElement');
+    const orbRings = document.querySelectorAll('.orb-ring');
 
     let mediaRecorder = null;
     let recordedChunks = [];
@@ -634,6 +953,112 @@
     let dataArray = null;
     let animationId = null;
     let currentTranscript = ''; // Store current transcription for manual send
+    let audioVisualizationId = null;
+
+    // Orb state management
+    function setOrbState(state) {
+      orbElement.classList.remove('listening', 'processing', 'idle');
+      orbRings.forEach(ring => ring.classList.remove('idle-animation'));
+      
+      if (state === 'listening') {
+        orbElement.classList.add('listening');
+      } else if (state === 'processing') {
+        orbElement.classList.add('processing');
+      } else if (state === 'idle') {
+        orbElement.classList.add('idle');
+        orbRings.forEach(ring => ring.classList.add('idle-animation'));
+      }
+    }
+
+    // Audio-reactive visualization
+    function visualizeAudio() {
+      if (!analyser || !isRecording) return;
+
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      const normalizedVolume = average / 255; // 0 to 1
+      
+      // Map volume to scale (1.0 to 1.3)
+      const scale = 1.0 + (normalizedVolume * 0.3);
+      
+      // Create organic blob shape based on frequency data
+      const lowFreq = dataArray.slice(0, 8).reduce((a, b) => a + b, 0) / 8 / 255;
+      const midFreq = dataArray.slice(8, 16).reduce((a, b) => a + b, 0) / 8 / 255;
+      const highFreq = dataArray.slice(16, 24).reduce((a, b) => a + b, 0) / 8 / 255;
+      
+      // Generate organic border-radius based on frequencies
+      const r1 = 45 + lowFreq * 10;
+      const r2 = 55 - midFreq * 10;
+      const r3 = 50 + highFreq * 8;
+      const r4 = 50 - lowFreq * 8;
+      const r5 = 48 + midFreq * 10;
+      const r6 = 52 - highFreq * 10;
+      const r7 = 51 + lowFreq * 7;
+      const r8 = 49 - midFreq * 7;
+      
+      const borderRadius = `${r1}% ${r2}% ${r3}% ${r4}% / ${r5}% ${r6}% ${r7}% ${r8}%`;
+      
+      // Apply to orb
+      orbElement.style.transform = `scale(${scale})`;
+      orbElement.style.borderRadius = borderRadius;
+      
+      // Enhanced glow based on volume
+      const glowIntensity = 80 + (normalizedVolume * 100);
+      const glowSpread = 120 + (normalizedVolume * 150);
+      orbElement.style.boxShadow = `
+        0 0 ${glowIntensity}px rgba(102, 126, 234, ${0.5 + normalizedVolume * 0.4}),
+        0 0 ${glowSpread}px rgba(118, 75, 162, ${0.3 + normalizedVolume * 0.3}),
+        inset 0 0 ${60 + normalizedVolume * 40}px rgba(255, 255, 255, ${0.1 + normalizedVolume * 0.15})
+      `;
+      
+      // Animate rings based on different frequency ranges
+      orbRings.forEach((ring, index) => {
+        const freqRange = index % 3;
+        let freq;
+        if (freqRange === 0) freq = lowFreq;
+        else if (freqRange === 1) freq = midFreq;
+        else freq = highFreq;
+        
+        const ringScale = 1.0 + (freq * 0.2);
+        const ringOpacity = 0.3 + (freq * 0.4);
+        
+        // Create blob shapes for rings too
+        const ringR1 = 48 + freq * 8;
+        const ringR2 = 52 - freq * 8;
+        const ringBorderRadius = `${ringR1}% ${ringR2}% ${ringR1}% ${ringR2}% / ${ringR2}% ${ringR1}% ${ringR2}% ${ringR1}%`;
+        
+        ring.style.transform = `translate(-50%, -50%) scale(${ringScale})`;
+        ring.style.opacity = ringOpacity;
+        ring.style.borderRadius = ringBorderRadius;
+      });
+      
+      audioVisualizationId = requestAnimationFrame(visualizeAudio);
+    }
+
+    // Stop audio visualization
+    function stopAudioVisualization() {
+      if (audioVisualizationId) {
+        cancelAnimationFrame(audioVisualizationId);
+        audioVisualizationId = null;
+      }
+      
+      // Reset orb and rings to default
+      orbElement.style.transform = '';
+      orbElement.style.borderRadius = '';
+      orbElement.style.boxShadow = '';
+      
+      orbRings.forEach(ring => {
+        ring.style.transform = '';
+        ring.style.opacity = '';
+        ring.style.borderRadius = '';
+      });
+    }
 
     const preferredMime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' :
                          (MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : '');
@@ -687,9 +1112,13 @@
         const source = audioContext.createMediaStreamSource(stream);
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.8;
         source.connect(analyser);
         
         dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        // Start audio visualization
+        visualizeAudio();
         
         function checkSilence() {
           if (!isRecording) return;
@@ -750,6 +1179,7 @@
         mediaRecorder.start();
         isRecording = true;
         isListening = true;
+        setOrbState('listening');
         statusText.textContent = 'Listening...';
         stopBtn.style.display = 'inline-block';
         restartBtn.style.display = 'none';
@@ -770,6 +1200,9 @@
         mediaRecorder.stop();
         isRecording = false;
         
+        // Stop audio visualization
+        stopAudioVisualization();
+        
         // Clear silence timer
         if (silenceTimer) {
           clearTimeout(silenceTimer);
@@ -787,6 +1220,7 @@
     function pauseListening() {
       stopRecording();
       isListening = false;
+      setOrbState('idle');
       statusText.textContent = 'Ready to listen';
       stopBtn.style.display = 'none';
       restartBtn.style.display = 'inline-block';
@@ -801,6 +1235,7 @@
       }
 
       isProcessing = true;
+      setOrbState('processing');
       statusText.textContent = 'Processing...';
       stopBtn.style.display = 'none';
       sendBtn.style.display = 'none';
@@ -859,6 +1294,7 @@
       if (!query.trim()) return;
 
       isProcessing = true;
+      setOrbState('processing');
       statusText.textContent = 'Sending query...';
       stopBtn.style.display = 'none';
       sendBtn.style.display = 'none';
@@ -914,6 +1350,7 @@
 
         audio.addEventListener('ended', () => {
           hideSubtitle();
+          setOrbState('listening');
           statusText.textContent = 'Listening...';
           recordedChunks = [];
           isProcessing = false;
@@ -926,6 +1363,7 @@
           startListening();
         });
 
+        setOrbState('idle');
         statusText.textContent = 'Speaking...';
         audio.play();
       } catch (err) {
