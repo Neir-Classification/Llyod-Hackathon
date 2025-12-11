@@ -15,6 +15,237 @@ interface ChatMessage {
   citations?: Citation[];
 }
 
+interface User {
+  id: number;
+  email: string;
+  full_name: string;
+  is_admin: boolean;
+}
+
+interface AdminDashboardProps {
+  user: User;
+  authToken: string | null;
+  onLogout: () => void;
+}
+
+function AdminDashboard({ user, authToken, onLogout }: AdminDashboardProps) {
+  const [users, setUsers] = useState<any[]>([]);
+  const [policies, setPolicies] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [interventions, setInterventions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'users' | 'policies' | 'tickets' | 'interventions'>('users');
+
+  useEffect(() => {
+    fetchAdminData();
+  }, []);
+
+  const fetchAdminData = async () => {
+    setLoading(true);
+    try {
+      const headers: Record<string, string> = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+      
+      // Fetch all users
+      const usersRes = await fetch('http://localhost:8000/admin/users', { headers });
+      if (usersRes.ok) setUsers(await usersRes.json());
+
+      // Fetch all policies
+      const policiesRes = await fetch('http://localhost:8000/admin/policies', { headers });
+      if (policiesRes.ok) setPolicies(await policiesRes.json());
+
+      // Fetch all tickets
+      const ticketsRes = await fetch('http://localhost:8000/admin/tickets', { headers });
+      if (ticketsRes.ok) setTickets(await ticketsRes.json());
+
+      // Fetch interventions
+      const interventionsRes = await fetch('http://localhost:8000/admin/interventions', { headers });
+      if (interventionsRes.ok) setInterventions(await interventionsRes.json());
+    } catch (err) {
+      console.error('Failed to fetch admin data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-black text-white">
+      {/* Header */}
+      <div className="border-b border-white/10 bg-black/50 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full border border-white/20 flex items-center justify-center">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-xl font-light">Admin Dashboard</h1>
+              <p className="text-xs text-gray-500">Insurance Management System</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm font-light">{user.full_name}</p>
+              <p className="text-xs text-gray-500">Administrator</p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="w-10 h-10 rounded-full border border-white/10 hover:border-white/30 transition-all flex items-center justify-center"
+              title="Logout"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-white/10">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex gap-8">
+            {(['users', 'policies', 'tickets', 'interventions'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`py-4 text-sm font-light border-b-2 transition-colors ${
+                  activeTab === tab
+                    ? 'border-white text-white'
+                    : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                <span className="ml-2 text-xs">
+                  ({tab === 'users' ? users.length : tab === 'policies' ? policies.length : tab === 'tickets' ? tickets.length : interventions.length})
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {loading ? (
+          <div className="text-center py-12 text-gray-500">Loading...</div>
+        ) : (
+          <>
+            {activeTab === 'users' && (
+              <div className="space-y-4">
+                {users.map((u) => (
+                  <div key={u.id} className="border border-white/10 rounded-lg p-4 hover:border-white/20 transition-colors">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-light text-lg">{u.full_name}</h3>
+                        <p className="text-sm text-gray-500">{u.email}</p>
+                        <div className="flex gap-2 mt-2">
+                          <span className={`text-xs px-2 py-1 rounded-full border ${u.is_admin ? 'border-blue-500/30 text-blue-400' : 'border-gray-500/30 text-gray-400'}`}>
+                            {u.is_admin ? 'Admin' : 'Customer'}
+                          </span>
+                          <span className={`text-xs px-2 py-1 rounded-full border ${u.is_active ? 'border-green-500/30 text-green-400' : 'border-red-500/30 text-red-400'}`}>
+                            {u.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-600 font-mono">ID: {u.id}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'policies' && (
+              <div className="space-y-4">
+                {policies.map((p) => (
+                  <div key={p.id} className="border border-white/10 rounded-lg p-4 hover:border-white/20 transition-colors">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-light text-lg">{p.policy_number}</h3>
+                        <p className="text-sm text-gray-500">{p.policy_type.toUpperCase()} Insurance</p>
+                        <div className="flex gap-4 mt-2 text-xs text-gray-400">
+                          <span>Premium: ${p.premium_amount?.toFixed(2)}/mo</span>
+                          <span>Coverage: ${p.coverage_amount?.toLocaleString()}</span>
+                          <span>Deductible: ${p.deductible}</span>
+                        </div>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full border ${p.status === 'active' ? 'border-green-500/30 text-green-400' : 'border-gray-500/30 text-gray-400'}`}>
+                        {p.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'tickets' && (
+              <div className="space-y-4">
+                {tickets.map((t) => (
+                  <div key={t.id} className="border border-white/10 rounded-lg p-4 hover:border-white/20 transition-colors">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <h3 className="font-light">{t.ticket_number}</h3>
+                        <p className="text-sm text-gray-400 mt-1">{t.title}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className={`text-xs px-2 py-1 rounded-full border ${
+                          t.priority === 'urgent' ? 'border-red-500/30 text-red-400' :
+                          t.priority === 'high' ? 'border-orange-500/30 text-orange-400' :
+                          'border-gray-500/30 text-gray-400'
+                        }`}>
+                          {t.priority}
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded-full border ${
+                          t.status === 'resolved' || t.status === 'closed' ? 'border-green-500/30 text-green-400' :
+                          t.status === 'in_progress' ? 'border-blue-500/30 text-blue-400' :
+                          'border-gray-500/30 text-gray-400'
+                        }`}>
+                          {t.status}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500">{t.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'interventions' && (
+              <div className="space-y-4">
+                {interventions.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">No interventions recorded</div>
+                ) : (
+                  interventions.map((i) => (
+                    <div key={i.id} className="border border-white/10 rounded-lg p-4 hover:border-white/20 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h3 className="font-light">{i.trigger_reason}</h3>
+                          <p className="text-xs text-gray-500 mt-1">AI Confidence: {(i.ai_confidence_score * 100).toFixed(0)}%</p>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded-full border ${
+                          i.status === 'resolved' ? 'border-green-500/30 text-green-400' :
+                          i.status === 'active' ? 'border-blue-500/30 text-blue-400' :
+                          'border-yellow-500/30 text-yellow-400'
+                        }`}>
+                          {i.status}
+                        </span>
+                      </div>
+                      {i.admin_notes && (
+                        <p className="text-xs text-gray-400 mt-2">Notes: {i.admin_notes}</p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { levelRef, ready, error, start } = useAudioLevel();
   const [level, setLevel] = useState(0);
@@ -32,6 +263,20 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([]);
   const [showCitations, setShowCitations] = useState(false);
+  const [detectedEmotion, setDetectedEmotion] = useState<string>('neutral');
+  
+  // Authentication state
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [showLogin, setShowLogin] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [userPolicies, setUserPolicies] = useState<any[]>([]);
+  const [userTickets, setUserTickets] = useState<any[]>([]);
   
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
@@ -96,6 +341,32 @@ export default function App() {
     };
     updateGreeting();
   }, []);
+
+  // Fetch user policies and tickets when logged in
+  useEffect(() => {
+    if (isLoggedIn && authToken && !user?.is_admin) {
+      const fetchUserData = async () => {
+        try {
+          const headers = { 'Authorization': `Bearer ${authToken}` };
+          
+          const policiesRes = await fetch('http://localhost:8000/me/policies', { headers });
+          if (policiesRes.ok) {
+            const data = await policiesRes.json();
+            setUserPolicies(data.policies || []);
+          }
+
+          const ticketsRes = await fetch('http://localhost:8000/me/tickets', { headers });
+          if (ticketsRes.ok) {
+            const data = await ticketsRes.json();
+            setUserTickets(data.tickets || []);
+          }
+        } catch (err) {
+          console.error('Failed to fetch user data:', err);
+        }
+      };
+      fetchUserData();
+    }
+  }, [isLoggedIn, authToken, user]);
 
   // Start recording with silence detection
   const startRecording = async () => {
@@ -381,9 +652,14 @@ export default function App() {
       console.log('📤 Sending query with history:', conversationHistory.length, 'messages');
       console.log('📝 History:', conversationHistory);
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+
       const ragRes = await fetch('/rag-query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ 
           query, 
           tone: 'neutral', 
@@ -396,9 +672,11 @@ export default function App() {
       const ragData = await ragRes.json();
       const responseText = ragData.response;
       const citations = ragData.citations || [];
+      const emotion = ragData.detected_emotion || 'neutral';
 
       setResponse(responseText);
       setCurrentCitations(citations);
+      setDetectedEmotion(emotion);
       
       // NOW add both user message and assistant response to chat (with citations)
       setChatMessages(prev => [
@@ -500,9 +778,14 @@ export default function App() {
         content: msg.text
       }));
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+
       const res = await fetch('/rag-query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ 
           query: text, 
           tone: 'neutral', 
@@ -514,17 +797,300 @@ export default function App() {
       if (!res.ok) throw new Error('Query failed');
       const data = await res.json();
       const citations = data.citations || [];
+      const emotion = data.detected_emotion || 'neutral';
       setCurrentCitations(citations);
+      setDetectedEmotion(emotion);
       setChatMessages(prev => [...prev, { text: data.response, role: 'assistant', citations: citations }]);
     } catch (err: any) {
       setChatMessages(prev => [...prev, { text: `Error: ${err.message}`, role: 'assistant' }]);
     }
   };
 
+  // Handle login
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setIsLoggingIn(true);
+
+    try {
+      const res = await fetch('http://localhost:8000/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword
+        })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || 'Login failed');
+      }
+
+      const data = await res.json();
+      setAuthToken(data.access_token);
+      setUser(data.user);
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      setGreetingText(`Welcome back, ${data.user.full_name.split(' ')[0]}`);
+    } catch (err: any) {
+      setLoginError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Show admin dashboard if user is admin
+  if (isLoggedIn && user?.is_admin) {
+    return <AdminDashboard user={user} authToken={authToken} onLogout={() => {
+      setIsLoggedIn(false);
+      setUser(null);
+      setAuthToken(null);
+      setShowLogin(true);
+    }} />;
+  }
+
+  // Show login screen if not logged in (and user hasn't chosen guest mode)
+  if (showLogin && !isLoggedIn) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center bg-black text-white overflow-hidden">
+        {/* Subtle background pattern */}
+        <div className="fixed inset-0 opacity-[0.02]" style={{
+          backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
+          backgroundSize: '40px 40px'
+        }} />
+        
+        {/* Login Card */}
+        <div className="relative z-10 w-full max-w-md mx-4 animate-fade-in">
+          <div className="border border-white/10 rounded-2xl p-8">
+            {/* Logo/Title */}
+            <div className="text-center mb-8">
+              <div className="w-12 h-12 mx-auto mb-4 rounded-full border border-white/20 flex items-center justify-center">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <h1 className="text-2xl font-light tracking-tight mb-2">Insurance Assistant</h1>
+              <p className="text-sm text-gray-500">Sign in to access your policies</p>
+            </div>
+
+            {/* Login Form */}
+            <form onSubmit={handleLogin} className="space-y-5">
+              {loginError && (
+                <div className="border border-red-500/30 rounded-lg p-3 text-sm text-red-400 animate-fade-in">
+                  {loginError}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="email" className="block text-sm text-gray-500 mb-2 font-light">Email Address</label>
+                <input
+                  id="email"
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 bg-transparent border border-white/10 rounded-lg focus:outline-none focus:border-white/30 transition-colors text-white placeholder-gray-600"
+                  placeholder="your.email@example.com"
+                  disabled={isLoggingIn}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm text-gray-500 mb-2 font-light">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 bg-transparent border border-white/10 rounded-lg focus:outline-none focus:border-white/30 transition-colors text-white placeholder-gray-600"
+                  placeholder="••••••••"
+                  disabled={isLoggingIn}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full py-3 bg-white text-black rounded-lg font-light hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoggingIn ? 'Signing in...' : 'Sign In'}
+              </button>
+
+              {/* Continue as Guest */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogin(false);
+                  setIsLoggedIn(false);
+                  setGreetingText('Welcome');
+                }}
+                className="w-full py-3 border border-white/10 rounded-lg font-light hover:border-white/30 transition-all text-sm"
+              >
+                Continue as Guest
+              </button>
+            </form>
+
+            {/* Demo Credentials */}
+            <div className="mt-6 pt-6 border-t border-white/10">
+              <p className="text-xs text-gray-500 text-center mb-3 font-light">Demo Credentials</p>
+              <div className="space-y-2 text-xs">
+                <div className="border border-white/10 rounded-lg p-3">
+                  <p className="text-gray-500 mb-1 font-light">Customer Account</p>
+                  <p className="font-mono text-gray-300">michael.johnson0@email.com</p>
+                  <p className="font-mono text-gray-300">password123</p>
+                </div>
+                <div className="border border-white/10 rounded-lg p-3">
+                  <p className="text-gray-500 mb-1 font-light">Admin Account</p>
+                  <p className="font-mono text-gray-300">admin1@insurance.com</p>
+                  <p className="font-mono text-gray-300">admin123</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-black text-white overflow-hidden">
       {/* Background gradient */}
       <div className="fixed inset-0 bg-gradient-radial from-purple-900/5 via-transparent to-transparent pointer-events-none" />
+      
+      {/* Top Right - User Info & Logout or Sign In */}
+      <div className="fixed top-8 right-8 flex items-center gap-3 z-30">
+        {isLoggedIn && user ? (
+          <div className="relative">
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="border border-white/10 rounded-full px-4 py-2 flex items-center gap-3 hover:border-white/20 transition-colors"
+            >
+              <div className="text-right">
+                <p className="text-sm font-light">{user.full_name}</p>
+                <p className="text-xs text-gray-500">{user.is_admin ? 'Admin' : 'Customer'}</p>
+              </div>
+              <div className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center text-xs font-light">
+                {user.full_name.charAt(0)}
+              </div>
+            </button>
+
+          {/* User Dropdown Menu */}
+          {showUserMenu && (
+            <div className="absolute top-full right-0 mt-2 w-96 bg-black border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+              {/* User Info Header */}
+              <div className="p-6 border-b border-white/10">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-12 h-12 rounded-full border border-white/20 flex items-center justify-center text-lg font-light">
+                    {user?.full_name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="font-light">{user?.full_name}</p>
+                    <p className="text-sm text-gray-500">{user?.email}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Policies Section */}
+              <div className="p-6 border-b border-white/10">
+                <h3 className="text-sm font-light mb-3 text-gray-400">Your Policies</h3>
+                {userPolicies.length === 0 ? (
+                  <p className="text-xs text-gray-600">No policies found</p>
+                ) : (
+                  <div className="space-y-3">
+                    {userPolicies.map((policy) => (
+                      <div key={policy.id} className="bg-white/5 rounded-lg p-3 border border-white/10">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <p className="text-sm font-light">{policy.policy_type.toUpperCase()} Insurance</p>
+                            <p className="text-xs text-gray-500 font-mono">{policy.policy_number}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            policy.status === 'active' 
+                              ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                              : 'bg-gray-500/10 text-gray-400 border border-gray-500/20'
+                          }`}>
+                            {policy.status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+                          <div>
+                            <span className="text-gray-600">Premium:</span> ${policy.premium_amount?.toFixed(2)}/mo
+                          </div>
+                          <div>
+                            <span className="text-gray-600">Coverage:</span> ${policy.coverage_amount?.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Recent Tickets */}
+              <div className="p-6 border-b border-white/10">
+                <h3 className="text-sm font-light mb-3 text-gray-400">Recent Tickets</h3>
+                {userTickets.length === 0 ? (
+                  <p className="text-xs text-gray-600">No tickets</p>
+                ) : (
+                  <div className="space-y-2">
+                    {userTickets.slice(0, 3).map((ticket) => (
+                      <div key={ticket.id} className="flex items-start justify-between text-xs">
+                        <div className="flex-1">
+                          <p className="font-mono text-gray-500">{ticket.ticket_number}</p>
+                          <p className="text-gray-400">{ticket.title}</p>
+                        </div>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          ticket.status === 'resolved' || ticket.status === 'closed'
+                            ? 'bg-green-500/10 text-green-400'
+                            : ticket.status === 'in_progress'
+                            ? 'bg-blue-500/10 text-blue-400'
+                            : 'bg-gray-500/10 text-gray-400'
+                        }`}>
+                          {ticket.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Logout Button */}
+              <div className="p-4">
+                <button
+                  onClick={() => {
+                    setIsLoggedIn(false);
+                    setUser(null);
+                    setAuthToken(null);
+                    setShowLogin(true);
+                    setChatMessages([]);
+                    setTranscript('Waiting for input...');
+                    setShowUserMenu(false);
+                  }}
+                  className="w-full py-2 border border-white/10 rounded-lg hover:border-white/30 transition-colors text-sm font-light flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          )}
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowLogin(true)}
+            className="border border-white/10 rounded-full px-4 py-2 hover:border-white/30 transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+            </svg>
+            <span className="text-sm font-light">Sign In</span>
+          </button>
+        )}
+      </div>
       
       {/* Top Left Buttons */}
       <div className="fixed top-8 left-8 flex gap-3 z-30">
@@ -594,6 +1160,16 @@ export default function App() {
           {isRecording ? 'Listening... (speak naturally, will auto-stop)' : statusText}
         </p>
         
+        {/* Emotion Detection Badge */}
+        {detectedEmotion !== 'neutral' && (
+          <div className="mb-3 flex items-center justify-center gap-2">
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-medium">Emotion:</span>
+            <span className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[11px] font-light uppercase tracking-wide text-gray-300">
+              {detectedEmotion}
+            </span>
+          </div>
+        )}
+        
         {/* Conversation Context Indicator */}
         {chatMessages.length > 0 && (
           <p className="text-sm text-purple-400/60 mb-8 animate-fade-in font-light">
@@ -642,7 +1218,7 @@ export default function App() {
       </div>
 
       {/* Subtitle - Reserved space with blur transition */}
-      <div className="fixed bottom-20 left-1/2 -translate-x-1/2 max-w-2xl w-[90%] h-[80px] flex items-center justify-center z-20">
+      <div className="fixed bottom-8 left-0 right-0 px-8 h-[80px] flex items-center justify-center z-20">
         <div className={`w-full bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl px-8 py-5 shadow-2xl transition-all duration-500 ${
           showSubtitle ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-md scale-95 pointer-events-none'
         }`}>

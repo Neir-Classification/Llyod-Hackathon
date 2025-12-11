@@ -9,6 +9,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, sta
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel
 from jose import JWTError, jwt
@@ -30,6 +31,16 @@ logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="Speech-Text Bridge", version="0.1.0")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -326,9 +337,59 @@ def retrieve(query: str, vector_db: FAISS, k: int = 3):
     return results
 
 
-def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral", conversation_history: list = None, auto_detect_tone: bool = False) -> str:
-    """Use LLM to generate a tone-appropriate response from retrieved chunks with conversation context."""
+def get_user_context(user: User, db: Session) -> str:
+    """Build a context string from the user's policies, tickets, and call history."""
+    try:
+        # Fetch user's policies
+        policies = db.query(Policy).filter(Policy.user_id == user.id).all()
+        
+        # Fetch user's open tickets
+        tickets = db.query(Ticket).filter(
+            Ticket.user_id == user.id,
+            Ticket.status.in_(['open', 'in_progress'])
+        ).all()
+        
+        # Build context string
+        context = f"\n\n=== USER CONTEXT ===\n"
+        context += f"User: {user.full_name} ({user.email})\n"
+        
+        if policies:
+            context += f"\nActive Policies ({len(policies)}):\n"
+            for p in policies:
+                context += f"- {p.policy_type.upper()} Insurance (Policy #{p.policy_number})\n"
+                context += f"  Status: {p.status}\n"
+                context += f"  Coverage: ${p.coverage_amount:,.0f}\n"
+                context += f"  Deductible: ${p.deductible:,.0f}\n"
+                context += f"  Premium: ${p.premium_amount:.2f}/month\n"
+                context += f"  Period: {p.start_date.strftime('%Y-%m-%d')} to {p.end_date.strftime('%Y-%m-%d')}\n"
+                if p.policy_details:
+                    context += f"  Details: {p.policy_details}\n"
+        else:
+            context += "\nNo active policies found.\n"
+        
+        if tickets:
+            context += f"\nOpen Support Tickets ({len(tickets)}):\n"
+            for t in tickets:
+                context += f"- Ticket #{t.ticket_number}: {t.title}\n"
+                context += f"  Priority: {t.priority} | Status: {t.status}\n"
+                context += f"  Description: {t.description}\n"
+        else:
+            context += "\nNo open support tickets.\n"
+        
+        context += "===================\n\n"
+        context += "IMPORTANT: When the user asks about 'my policy', 'my coverage', 'my claim', or similar personal questions, use the specific information from their USER CONTEXT above. Provide personalized responses based on their actual policy details.\n\n"
+        
+        return context
+    except Exception as e:
+        logger.error(f"Error building user context: {e}")
+        return ""
+
+
+def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral", conversation_history: list = None, auto_detect_tone: bool = False, user_context: str = "") -> tuple[str, str]:
+    """Use LLM to generate a tone-appropriate response from retrieved chunks with conversation context.
+    Returns tuple of (response_text, detected_tone)"""
     # Auto-detect empathetic tone if requested
+    detected_tone = tone
     if auto_detect_tone:
         detected_tone = detect_empathy_and_tone(user_question, conversation_history)
         logger.info(f"[EMPATHY] Using auto-detected tone: {detected_tone} (override: {tone} -> {detected_tone})")
@@ -336,12 +397,17 @@ def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neut
     
     if tone not in TONE_PROMPTS:
         tone = "neutral"
+        detected_tone = "neutral"
     
     if conversation_history is None:
         conversation_history = []
     
     # Combine retrieved chunks into context
     context = "\n\n".join([doc.page_content for doc, _ in retrieved_chunks])
+    
+    # Add user context if available (for personalized responses)
+    if user_context:
+        context = user_context + context
     
     # Build conversation history context
     history_context = ""
@@ -435,7 +501,7 @@ Policy Context:
     ]
     
     response = llm.invoke(messages)
-    return response.content
+    return response.content, detected_tone
 
 
 def get_openai_client() -> OpenAI:
@@ -587,13 +653,17 @@ async def root():
 
 
 @app.post("/rag-query")
-async def rag_query(body: RAGQueryRequest) -> JSONResponse:
+async def rag_query(
+    body: RAGQueryRequest, 
+    current_user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+) -> JSONResponse:
     """Query the RAG pipeline and return a tone-adjusted response with conversation history."""
     try:
         if not body.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
-        logger.info(f"[RAG QUERY INPUT] Query: '{body.query}' | Tone: '{body.tone}' | K: {body.k} | History: {len(body.conversation_history or [])}")
+        logger.info(f"[RAG QUERY INPUT] Query: '{body.query}' | Tone: '{body.tone}' | K: {body.k} | History: {len(body.conversation_history or [])} | User: {current_user.email if current_user else 'Guest'}")
         
         # Get or build the vector store
         vector_db = get_vector_store()
@@ -604,13 +674,20 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         # Convert conversation history to dict format
         history = [{"role": msg.role, "content": msg.content} for msg in (body.conversation_history or [])]
         
+        # Build user context if user is authenticated
+        user_context = ""
+        if current_user:
+            user_context = get_user_context(current_user, db)
+            logger.info(f"[USER CONTEXT] Built context for {current_user.email}")
+        
         # Generate tone-adjusted response with conversation context and empathy detection
-        response_text = adjust_tone_with_llm(
+        response_text, detected_emotion = adjust_tone_with_llm(
             results, 
             body.query, 
             body.tone, 
             history, 
-            auto_detect_tone=body.auto_detect_empathy
+            auto_detect_tone=body.auto_detect_empathy,
+            user_context=user_context
         )
         
         # Format citations from retrieved documents
@@ -623,13 +700,14 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
                 "score": float(score)
             })
         
-        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}' | Citations: {len(citations)}")
+        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}' | Citations: {len(citations)} | Emotion: {detected_emotion}")
         
         return JSONResponse({
             "response": response_text,
             "tone": body.tone,
             "query": body.query,
-            "citations": citations
+            "citations": citations,
+            "detected_emotion": detected_emotion
         })
     except Exception as exc:
         logger.exception("RAG query failed")
@@ -643,6 +721,8 @@ async def rag_audio_query(
     k: Optional[int] = Form(2),
     voice: Optional[str] = Form("alloy"),
     language: Optional[str] = Form(None),
+    current_user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db)
 ) -> StreamingResponse:
     """
     Complete audio-to-audio RAG pipeline:
@@ -664,7 +744,7 @@ async def rag_audio_query(
             language=language,
         )
         user_query = transcript.text
-        logger.info(f"[RAG-AUDIO] Transcribed query: '{user_query}'")
+        logger.info(f"[RAG-AUDIO] Transcribed query: '{user_query}' | User: {current_user.email if current_user else 'Guest'}")
     except Exception as exc:
         logger.exception("Transcription failed in RAG audio query")
         raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
@@ -676,10 +756,17 @@ async def rag_audio_query(
         
         vector_db = get_vector_store()
         results = retrieve(user_query, vector_db, k=k)
-        # Use empathy detection for audio queries
-        response_text = adjust_tone_with_llm(results, user_query, tone, auto_detect_tone=True)
         
-        logger.info(f"[RAG-AUDIO] Generated response: '{response_text}'")
+        # Build user context if user is authenticated
+        user_context = ""
+        if current_user:
+            user_context = get_user_context(current_user, db)
+            logger.info(f"[USER CONTEXT] Built context for {current_user.email} in audio query")
+        
+        # Use empathy detection for audio queries
+        response_text, detected_emotion = adjust_tone_with_llm(results, user_query, tone, auto_detect_tone=True, user_context=user_context)
+        
+        logger.info(f"[RAG-AUDIO] Generated response: '{response_text}' | Emotion: {detected_emotion}")
     except Exception as exc:
         logger.exception("RAG query failed in audio pipeline")
         raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
@@ -717,6 +804,8 @@ async def rag_audio_query_chunk(
     voice: Optional[str] = Form("alloy"),
     language: Optional[str] = Form(None),
     mime_type: Optional[str] = Form(None),
+    current_user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db)
 ) -> StreamingResponse:
     """
     Audio chunk-based RAG pipeline (for streaming/real-time scenarios):
@@ -766,7 +855,7 @@ async def rag_audio_query_chunk(
             language=language,
         )
         user_query = transcript.text
-        logger.info(f"[RAG-AUDIO-CHUNK] Transcribed query: '{user_query}'")
+        logger.info(f"[RAG-AUDIO-CHUNK] Transcribed query: '{user_query}' | User: {current_user.email if current_user else 'Guest'}")
     except Exception as exc:
         logger.exception("Transcription failed in RAG audio chunk query")
         raise HTTPException(status_code=502, detail=f"Transcription failed: {exc}") from exc
@@ -778,10 +867,17 @@ async def rag_audio_query_chunk(
         
         vector_db = get_vector_store()
         results = retrieve(user_query, vector_db, k=k)
-        # Use empathy detection for audio queries
-        response_text = adjust_tone_with_llm(results, user_query, tone, auto_detect_tone=True)
         
-        logger.info(f"[RAG-AUDIO-CHUNK] Generated response: '{response_text}'")
+        # Build user context if user is authenticated
+        user_context = ""
+        if current_user:
+            user_context = get_user_context(current_user, db)
+            logger.info(f"[USER CONTEXT] Built context for {current_user.email} in audio chunk query")
+        
+        # Use empathy detection for audio queries
+        response_text, detected_emotion = adjust_tone_with_llm(results, user_query, tone, auto_detect_tone=True, user_context=user_context)
+        
+        logger.info(f"[RAG-AUDIO-CHUNK] Generated response: '{response_text}' | Emotion: {detected_emotion}")
     except Exception as exc:
         logger.exception("RAG query failed in audio chunk pipeline")
         raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
@@ -991,6 +1087,104 @@ def get_user_call_history(current_user: User = Depends(get_current_user), db: Se
         }
         for c in calls
     ]}
+
+
+# ============================================================================
+# Admin Endpoints
+# ============================================================================
+
+def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Verify user is admin."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
+
+@app.get("/admin/users")
+def get_all_users(current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Get all users (admin only)."""
+    from database import User as UserModel
+    users = db.query(UserModel).all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "username": u.username,
+            "full_name": u.full_name,
+            "phone": u.phone,
+            "is_admin": u.is_admin,
+            "is_active": u.is_active,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        }
+        for u in users
+    ]
+
+
+@app.get("/admin/policies")
+def get_all_policies(current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Get all policies (admin only)."""
+    policies = db.query(Policy).all()
+    return [
+        {
+            "id": p.id,
+            "user_id": p.user_id,
+            "policy_number": p.policy_number,
+            "policy_type": p.policy_type,
+            "status": p.status,
+            "premium_amount": p.premium_amount,
+            "coverage_amount": p.coverage_amount,
+            "deductible": p.deductible,
+            "start_date": p.start_date.isoformat() if p.start_date else None,
+            "end_date": p.end_date.isoformat() if p.end_date else None
+        }
+        for p in policies
+    ]
+
+
+@app.get("/admin/tickets")
+def get_all_tickets(current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Get all tickets (admin only)."""
+    tickets = db.query(Ticket).all()
+    return [
+        {
+            "id": t.id,
+            "user_id": t.user_id,
+            "ticket_number": t.ticket_number,
+            "title": t.title,
+            "description": t.description,
+            "category": t.category,
+            "priority": t.priority,
+            "status": t.status,
+            "resolution": t.resolution,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "resolved_at": t.resolved_at.isoformat() if t.resolved_at else None
+        }
+        for t in tickets
+    ]
+
+
+@app.get("/admin/interventions")
+def get_all_interventions(current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Get all admin interventions (admin only)."""
+    from database import AdminIntervention
+    interventions = db.query(AdminIntervention).all()
+    return [
+        {
+            "id": i.id,
+            "user_id": i.user_id,
+            "admin_id": i.admin_id,
+            "trigger_reason": i.trigger_reason,
+            "ai_confidence_score": i.ai_confidence_score,
+            "status": i.status,
+            "admin_notes": i.admin_notes,
+            "created_at": i.created_at.isoformat() if i.created_at else None,
+            "resolved_at": i.resolved_at.isoformat() if i.resolved_at else None
+        }
+        for i in interventions
+    ]
 
 
 # cd 'c:\Users\praja\Desktop\neir-classification'; python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
