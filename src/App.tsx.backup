@@ -1,0 +1,1090 @@
+import { useEffect, useState, useMemo, useRef } from 'react';
+import Iridescence from './components/Iridescence';
+import AgentView from './components/AgentView';
+import { useAudioLevel } from './hooks/useAudioLevel';
+
+interface Citation {
+  policy_name: string;
+  page_number: number | string;
+  content: string;
+  score?: number;
+}
+
+interface ChatMessage {
+  text: string;
+  role: 'user' | 'assistant';
+  citations?: Citation[];
+}
+
+interface HandoffData {
+  conversation_summary: string;
+  conversation_log: { role: 'customer' | 'ai_assistant'; content: string }[];
+  customer_history: any;
+  handoff_timestamp: string;
+  handoff_reason: string;
+}
+
+export default function App() {
+  const { levelRef, ready, error, start } = useAudioLevel();
+  const [level, setLevel] = useState(0);
+  const [greetingText, setGreetingText] = useState('');
+  const [greetingTime, setGreetingTime] = useState('');
+  const [statusText, setStatusText] = useState('Click to start');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [transcript, setTranscript] = useState('Waiting for input...');
+  const [response, setResponse] = useState('Processing...');
+  const [subtitle, setSubtitle] = useState('');
+  const [showSubtitle, setShowSubtitle] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [currentCitations, setCurrentCitations] = useState<Citation[]>([]);
+  const [showCitations, setShowCitations] = useState(false);
+  
+  // Agent handoff state
+  const [showAgentView, setShowAgentView] = useState(false);
+  const [handoffData, setHandoffData] = useState<HandoffData | null>(null);
+  const [handoffPending, setHandoffPending] = useState(false);
+  
+  // Demo flow state - tracks which stage we're in
+  // Using a ref to avoid stale closure issues in async functions
+  const demoStageRef = useRef(0);
+  const [demoStage, setDemoStage] = useState(0);
+  
+  // Helper to update both ref and state
+  const updateDemoStage = (newStage: number) => {
+    console.log(`🔄 [DEMO] Stage changing: ${demoStageRef.current} → ${newStage}`);
+    demoStageRef.current = newStage;
+    setDemoStage(newStage);
+  };
+  // Stage 0: Waiting for fire/emergency
+  // Stage 1: Waiting for money question
+  // Stage 2: Waiting for human request
+  // Stage 3: Handoff complete
+  
+  // Hardcoded demo responses
+  const DEMO_RESPONSES = {
+    stage1_fire: "I'm so sorry to hear about the fire. That must be incredibly difficult and overwhelming. Please know that we're here to support you through this. Based on your policy, here's what you need to do: First, ensure everyone is safe and contact emergency services if you haven't already. Then, document any damage with photos if it's safe to do so. Your policy covers fire damage up to £350,000 for buildings and £75,000 for contents. I can help you start the claims process right away. Would you like me to explain the next steps?",
+    stage2_money: "Based on your Premium Home Insurance policy, here's your coverage breakdown for fire damage: Your buildings coverage is £350,000, contents coverage is £75,000, and you have £50,000 for alternative accommodation while repairs are made. Your standard excess is £250. For a total loss claim like a house fire, you could potentially receive up to £425,000 depending on the assessed damage. Our claims team will send an assessor within 48 hours to evaluate the full extent of the damage. Would you like me to connect you with a claims specialist who can give you a more precise estimate?",
+    stage3_handoff: "Absolutely, I completely understand. Let me connect you with a human agent right now. They will have full access to our conversation and your account details, so you won't need to repeat anything. Please hold while I transfer you..."
+  };
+
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [animationState, setAnimationState] = useState<'idle' | 'listening' | 'thinking' | 'responding'>('idle');
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const vadFrameRef = useState<{ id: number | null }>({ id: null })[0];
+  
+  // Dual-pipeline state
+  const [quickResponsePlaying, setQuickResponsePlaying] = useState(false);
+  const [fullResponseReady, setFullResponseReady] = useState(false);
+  const pendingFullAudioRef = useState<{ audio: HTMLAudioElement | null, text: string, citations: Citation[] }>({ audio: null, text: '', citations: [] })[0];
+  
+  // Audio playback tracking - prevents overlapping audio
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Stop any currently playing audio
+  const stopCurrentAudio = () => {
+    if (currentAudioRef.current) {
+      console.log('🔇 Stopping current audio');
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      // Revoke the object URL if it exists
+      if (currentAudioRef.current.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentAudioRef.current.src);
+      }
+      currentAudioRef.current = null;
+    }
+  };
+  
+  // Play audio and track it
+  const playAudio = async (audio: HTMLAudioElement): Promise<void> => {
+    // Stop any currently playing audio first
+    stopCurrentAudio();
+    
+    // Track this audio
+    currentAudioRef.current = audio;
+    
+    try {
+      await audio.play();
+      console.log('▶️ Audio playing');
+    } catch (err) {
+      console.error('❌ Audio play failed:', err);
+      currentAudioRef.current = null;
+      throw err;
+    }
+  };
+
+  // Smooth level animation
+  useEffect(() => {
+    let raf = 0;
+    const update = () => {
+      setLevel(prev => prev + (levelRef.current - prev) * 0.25);
+      raf = requestAnimationFrame(update);
+    };
+    update();
+    return () => cancelAnimationFrame(raf);
+  }, [levelRef]);
+
+  // Calculate orb properties based on animation state
+  const orbColor: [number, number, number] = 
+    animationState === 'listening' ? [0.3, 0.5, 1.0] : // Blue when listening
+    [0.8, 0.4, 0.9]; // Purple for idle/thinking/responding
+  
+  const amplitude = 
+    animationState === 'idle' ? 0.15 :
+    animationState === 'listening' ? 0.18 + level * 1.7 : // Audio-reactive
+    animationState === 'thinking' ? 0.3 : // Pulsing
+    0.25; // Steady
+  
+  const speed = 
+    animationState === 'idle' ? 0.5 :
+    animationState === 'listening' ? 0.75 + level * 0.5 : // Audio-reactive
+    animationState === 'thinking' ? 1.5 : // Fast pulsing
+    0.8; // Medium
+  
+  const scale = 
+    animationState === 'idle' ? 1 :
+    animationState === 'listening' ? 1 + level * 0.35 : // Audio-reactive
+    animationState === 'thinking' ? 1.1 : // Slightly larger
+    1.05; // Normal
+  
+  const glowOpacity = 
+    animationState === 'idle' ? 0.2 :
+    animationState === 'listening' ? 0.25 + level * 2.45 : // Audio-reactive
+    animationState === 'thinking' ? 0.8 : // Bright
+    0.5; // Medium
+
+  // Initialize greeting
+  useEffect(() => {
+    const updateGreeting = () => {
+      const hour = new Date().getHours();
+      const minutes = String(new Date().getMinutes()).padStart(2, '0');
+      const period = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour % 12 || 12;
+
+      let greeting = 'Good morning';
+      if (hour >= 12 && hour < 17) greeting = 'Good afternoon';
+      if (hour >= 17) greeting = 'Good evening';
+
+      setGreetingText(greeting);
+      setGreetingTime(`${displayHour}:${minutes} ${period}`);
+    };
+    updateGreeting();
+  }, []);
+
+  // Start recording with silence detection
+  const startRecording = async () => {
+    console.log('🎬 Starting recording, ready:', ready, 'isRecording:', isRecording);
+    
+    // Prevent multiple simultaneous recordings
+    if (isRecording) {
+      console.log('⚠️ Already recording, ignoring request');
+      return;
+    }
+    
+    // Cancel any lingering VAD animation frame
+    if (vadFrameRef.id !== null) {
+      console.log('🧹 Canceling previous VAD frame:', vadFrameRef.id);
+      cancelAnimationFrame(vadFrameRef.id);
+      vadFrameRef.id = null;
+    }
+    
+    try {
+      // Enable audio context if not ready (user gesture requirement)
+      if (!ready) {
+        await start();
+      }
+
+      // Start recording
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : MediaRecorder.isTypeSupported('audio/ogg') 
+        ? 'audio/ogg' 
+        : '';
+      
+      // Set up audio context for silence detection FIRST
+      const audioCtx = new AudioContext();
+      setAudioContext(audioCtx);
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.3;
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      const recorder = mimeType 
+        ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 }) 
+        : new MediaRecorder(stream);
+      
+      const allChunks: Blob[] = [];
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          allChunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        console.log('🛑 Recorder stopped - cleaning up');
+        
+        // Stop all tracks
+        stream.getTracks().forEach(t => {
+          t.stop();
+          console.log('🔌 Stopped track:', t.kind);
+        });
+        
+        // Close audio context
+        if (audioCtx) {
+          try {
+            await audioCtx.close();
+            console.log('🔇 Audio context closed');
+          } catch (e) {
+            console.warn('Audio context close error:', e);
+          }
+        }
+        
+        // Cancel VAD animation frame
+        if (vadFrameRef.id !== null) {
+          console.log('🧹 Canceling VAD frame on stop:', vadFrameRef.id);
+          cancelAnimationFrame(vadFrameRef.id);
+          vadFrameRef.id = null;
+        }
+        
+        setRecordedChunks(allChunks);
+        setMediaRecorder(null);
+        setAudioContext(null);
+        setIsRecording(false);
+        
+        // Process full audio immediately
+        await processVoiceInput(allChunks, mimeType || 'audio/webm');
+      };
+
+      // Start recording without timeslice for faster processing
+      recorder.start();
+      console.log('🎙️ Recording started');
+      
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+      setAnimationState('listening');
+      setStatusText('Listening...');
+      setTranscript('Listening...');
+
+      // Voice Activity Detection with RMS (Root Mean Square) method
+      let silenceStart: number | null = null;
+      let speechDetected = false;
+      let isChecking = true;
+      let audioLevelHistory: number[] = [];
+      const HISTORY_SIZE = 10;
+      
+      // Dynamic thresholds based on environment
+      let noiseFloor = 0;
+      let calibrationSamples = 0;
+      const CALIBRATION_FRAMES = 30;
+      
+      const SILENCE_DURATION = 1800; // 1.8 seconds
+      const SPEECH_MULTIPLIER = 3; // Speech must be 3x noise floor
+      const SILENCE_MULTIPLIER = 1.5; // Silence is 1.5x noise floor
+
+      const calculateRMS = () => {
+        analyser.getByteTimeDomainData(dataArray);
+        
+        let sumSquares = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const normalized = (dataArray[i] - 128) / 128; // Normalize to -1 to 1
+          sumSquares += normalized * normalized;
+        }
+        return Math.sqrt(sumSquares / bufferLength);
+      };
+
+      const checkAudioLevel = () => {
+        // Check if we should continue monitoring
+        if (!isChecking) {
+          console.log('⛔ VAD checking stopped by flag');
+          vadFrameRef.id = null;
+          return;
+        }
+        
+        if (!recorder || recorder.state !== 'recording') {
+          console.log('⛔ VAD stopped - recorder state:', recorder?.state);
+          vadFrameRef.id = null;
+          return;
+        }
+
+        const rms = calculateRMS();
+        const level = rms * 100; // Scale to 0-100
+        
+        // Calibrate noise floor in first second
+        if (calibrationSamples < CALIBRATION_FRAMES) {
+          noiseFloor = Math.max(noiseFloor, level);
+          calibrationSamples++;
+          if (calibrationSamples === CALIBRATION_FRAMES) {
+            console.log('🎚️ Noise floor calibrated:', noiseFloor.toFixed(2));
+          }
+          vadFrameRef.id = requestAnimationFrame(checkAudioLevel);
+          return;
+        }
+        
+        // Keep rolling average
+        audioLevelHistory.push(level);
+        if (audioLevelHistory.length > HISTORY_SIZE) {
+          audioLevelHistory.shift();
+        }
+        
+        const avgLevel = audioLevelHistory.reduce((a, b) => a + b, 0) / audioLevelHistory.length;
+        const speechThreshold = noiseFloor * SPEECH_MULTIPLIER;
+        const silenceThreshold = noiseFloor * SILENCE_MULTIPLIER;
+
+        // Detect speech start
+        if (!speechDetected && avgLevel > speechThreshold) {
+          speechDetected = true;
+          console.log('🎤 Speech detected! Level:', avgLevel.toFixed(2), 'Threshold:', speechThreshold.toFixed(2));
+        }
+
+        // Detect silence after speech
+        if (speechDetected) {
+          if (avgLevel < silenceThreshold) {
+            if (silenceStart === null) {
+              silenceStart = Date.now();
+              console.log('🔇 Silence started');
+            } else {
+              const silenceDuration = Date.now() - silenceStart;
+              if (silenceDuration > SILENCE_DURATION) {
+                console.log('🛑 AUTO-STOP: Silence detected for', silenceDuration, 'ms');
+                isChecking = false;
+                vadFrameRef.id = null;
+                if (recorder.state === 'recording') {
+                  recorder.stop();
+                }
+                return;
+              }
+            }
+          } else {
+            if (silenceStart !== null) {
+              console.log('🔊 Speech resumed');
+            }
+            silenceStart = null;
+          }
+        }
+
+        vadFrameRef.id = requestAnimationFrame(checkAudioLevel);
+      };
+
+      // Start VAD after setup
+      setTimeout(() => {
+        console.log('🎬 Starting Voice Activity Detection (VAD)');
+        checkAudioLevel();
+      }, 100);
+    } catch (err) {
+      console.error('Microphone access error:', err);
+      setStatusText('Microphone access denied');
+    }
+  };
+
+  // Stop recording
+  const stopRecording = () => {
+    console.log('stopRecording called, mediaRecorder:', mediaRecorder, 'isRecording:', isRecording);
+    if (mediaRecorder && isRecording) {
+      console.log('Stopping recorder...');
+      mediaRecorder.stop();
+      setIsRecording(false);
+      setStatusText('Processing...');
+    }
+  };
+
+  // Process voice input
+  const processVoiceInput = async (chunks: Blob[], mimeType: string) => {
+    if (chunks.length === 0) return;
+
+    setIsProcessing(true);
+    setAnimationState('thinking');
+    setStatusText('Processing...');
+
+    try {
+      const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
+      const file = new File(chunks, `recording.${ext}`, { type: mimeType });
+
+      const formData = new FormData();
+      formData.append('audio_file', file);
+
+      const transcribeRes = await fetch('/speech-to-text', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!transcribeRes.ok) throw new Error('Transcription failed');
+      const transcribeData = await transcribeRes.json();
+      const query = transcribeData.text;
+
+      setTranscript(query);
+
+      if (!query.trim() || query.length < 2) {
+        setStatusText('Ready to listen');
+        setIsProcessing(false);
+        setAnimationState('idle');
+        return;
+      }
+
+      // Get RAG response
+      await sendQuery(query);
+    } catch (err: any) {
+      console.error('Error processing voice input:', err);
+      setStatusText('Error. Try again.');
+      setTranscript(`Error: ${err.message}`);
+      setIsProcessing(false);
+      setAnimationState('idle');
+    }
+  };
+
+  // Trigger agent handoff
+  const triggerAgentHandoff = async (currentQuery?: string) => {
+    console.log('🔄 [HANDOFF] Initiating agent handoff...');
+    setHandoffPending(true);
+    
+    try {
+      // Prepare conversation history
+      const conversationHistory = chatMessages.map(msg => ({
+        role: msg.role,
+        content: msg.text
+      }));
+
+      const response = await fetch('/agent-handoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation_history: conversationHistory,
+          current_query: currentQuery,
+          user_id: null // Will use default session user
+        })
+      });
+
+      if (!response.ok) throw new Error('Handoff request failed');
+      
+      const data = await response.json();
+      console.log('✅ [HANDOFF] Received handoff data:', data);
+      
+      setHandoffData(data.handoff_data);
+      setShowAgentView(true);
+      setHandoffPending(false);
+      
+      // Stop any ongoing processes
+      stopCurrentAudio();
+      setIsProcessing(false);
+      setAnimationState('idle');
+      
+    } catch (err: any) {
+      console.error('❌ [HANDOFF] Failed:', err);
+      setHandoffPending(false);
+      setStatusText('Handoff failed. Please try again.');
+    }
+  };
+
+  // Check if query needs human handoff
+  const checkForHandoff = async (query: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/check-human-handoff?query=${encodeURIComponent(query)}`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.needs_handoff;
+      }
+    } catch (err) {
+      console.warn('Handoff check failed:', err);
+    }
+    return false;
+  };
+
+  // Helper function to play TTS for a response
+  const playResponseAudio = async (text: string, onComplete?: () => void) => {
+    try {
+      const ttsRes = await fetch('/text-to-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: 'alloy', audio_format: 'mp3' })
+      });
+      
+      if (ttsRes.ok) {
+        const audioBlob = await ttsRes.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.volume = 1.0;
+        
+        audio.addEventListener('ended', () => {
+          URL.revokeObjectURL(audioUrl);
+          setShowSubtitle(false);
+          setAnimationState('idle');
+          setIsProcessing(false);
+          currentAudioRef.current = null;
+          onComplete?.();
+          
+          // Auto-restart listening after response
+          setTimeout(() => startRecording(), 500);
+        });
+        
+        audio.addEventListener('error', () => {
+          URL.revokeObjectURL(audioUrl);
+          setIsProcessing(false);
+          setAnimationState('idle');
+          onComplete?.();
+        });
+        
+        setAnimationState('responding');
+        await playAudio(audio);
+      }
+    } catch (err) {
+      console.error('TTS failed:', err);
+      setIsProcessing(false);
+      setAnimationState('idle');
+      onComplete?.();
+    }
+  };
+
+  // DEMO FLOW: Hardcoded 3-stage conversation
+  const sendQuery = async (query: string) => {
+    if (!query.trim()) return;
+
+    // Stop any currently playing audio before starting new query
+    stopCurrentAudio();
+    
+    setIsProcessing(true);
+    setStatusText('Processing...');
+    
+    // Add user message to chat
+    setChatMessages(prev => [...prev, { text: query, role: 'user' }]);
+    setTranscript(query);
+
+    const queryLower = query.toLowerCase();
+    
+    // Use ref for current stage to avoid stale closure
+    const currentStage = demoStageRef.current;
+    console.log(`📤 [DEMO] Stage ${currentStage} - Query: "${query}"`);
+
+    // STAGE 0: Waiting for fire/emergency mention
+    if (currentStage === 0) {
+      // Check for fire/emergency keywords
+      const isFireEmergency = ['fire', 'burn', 'burned', 'burning', 'house fire', 'home fire', 'flames'].some(
+        kw => queryLower.includes(kw)
+      );
+      
+      if (isFireEmergency) {
+        console.log('🔥 [DEMO] Stage 0 → 1: Fire emergency detected');
+        const responseText = DEMO_RESPONSES.stage1_fire;
+        
+        setChatMessages(prev => [...prev, { text: responseText, role: 'assistant' }]);
+        setResponse(responseText);
+        setSubtitle(responseText);
+        setShowSubtitle(true);
+        updateDemoStage(1);
+        
+        await playResponseAudio(responseText);
+        return;
+      }
+    }
+    
+    // STAGE 1: Waiting for money/claim amount question
+    if (currentStage === 1) {
+      // Check for money/amount keywords
+      const isMoneyQuestion = ['money', 'how much', 'amount', 'pay', 'payment', 'receive', 'get', 'claim amount', 'worth', 'value', 'coverage', 'covered', 'estimate', 'compensation'].some(
+        kw => queryLower.includes(kw)
+      );
+      
+      if (isMoneyQuestion) {
+        console.log('💰 [DEMO] Stage 1 → 2: Money question detected');
+        const responseText = DEMO_RESPONSES.stage2_money;
+        
+        setChatMessages(prev => [...prev, { text: responseText, role: 'assistant' }]);
+        setResponse(responseText);
+        setSubtitle(responseText);
+        setShowSubtitle(true);
+        updateDemoStage(2);
+        
+        await playResponseAudio(responseText);
+        return;
+      }
+    }
+    
+    // STAGE 2: Waiting for human request
+    if (currentStage === 2) {
+      // Check for human handoff keywords
+      const isHumanRequest = ['human', 'person', 'agent', 'someone', 'talk to', 'speak to', 'real', 'transfer', 'connect', 'representative', 'manager', 'specialist'].some(
+        kw => queryLower.includes(kw)
+      );
+      
+      if (isHumanRequest) {
+        console.log('👤 [DEMO] Stage 2 → 3: Human handoff detected');
+        const responseText = DEMO_RESPONSES.stage3_handoff;
+        
+        setChatMessages(prev => [...prev, { text: responseText, role: 'assistant' }]);
+        setResponse(responseText);
+        setSubtitle(responseText);
+        setShowSubtitle(true);
+        updateDemoStage(3);
+        
+        // Play handoff audio then trigger handoff
+        try {
+          const ttsRes = await fetch('/text-to-speech', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: responseText, voice: 'alloy', audio_format: 'mp3' })
+          });
+          
+          if (ttsRes.ok) {
+            const audioBlob = await ttsRes.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            audio.volume = 1.0;
+            
+            audio.addEventListener('ended', () => {
+              URL.revokeObjectURL(audioUrl);
+              setShowSubtitle(false);
+              // Trigger handoff after audio finishes
+              triggerAgentHandoff(query);
+            });
+            
+            setAnimationState('responding');
+            await playAudio(audio);
+          } else {
+            triggerAgentHandoff(query);
+          }
+        } catch (err) {
+          triggerAgentHandoff(query);
+        }
+        return;
+      }
+    }
+    
+    // If we're in stage 3 or query doesn't match expected pattern, 
+    // give a gentle redirect based on current stage
+    let fallbackResponse = "";
+    if (currentStage === 0) {
+      fallbackResponse = "I'm here to help you with your insurance needs. If you have an emergency or need to report an incident like a fire or damage to your property, please let me know and I'll guide you through the process.";
+    } else if (currentStage === 1) {
+      fallbackResponse = "I understand you've had a fire at your property. If you'd like to know more about your coverage amounts and what you could receive from your claim, just ask me about the money or coverage details.";
+    } else if (currentStage === 2) {
+      fallbackResponse = "I've provided the coverage details for your claim. If you'd like to speak with a human agent who can give you more personalized assistance, just let me know and I'll connect you right away.";
+    } else {
+      fallbackResponse = "Thank you for using our service. A human agent will be with you shortly.";
+    }
+    
+    setChatMessages(prev => [...prev, { text: fallbackResponse, role: 'assistant' }]);
+    setResponse(fallbackResponse);
+    setSubtitle(fallbackResponse);
+    setShowSubtitle(true);
+    
+    await playResponseAudio(fallbackResponse);
+  };
+
+  // Send chat message with conversation history - also uses demo flow
+  const sendChatMessage = async () => {
+    const text = chatInput.trim();
+    if (!text) return;
+
+    setChatInput('');
+    
+    // Use the same demo flow as voice
+    await sendQuery(text);
+  };
+
+  return (
+    <div className="relative flex min-h-screen items-center justify-center bg-black text-white overflow-hidden">
+      {/* Agent View Modal - Full Screen */}
+      {showAgentView && (
+        <AgentView 
+          handoffData={handoffData} 
+          onClose={() => {
+            setShowAgentView(false);
+            setHandoffData(null);
+          }} 
+        />
+      )}
+      
+      {/* Handoff Transfer Screen */}
+      {handoffPending && !showAgentView && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-50 flex items-center justify-center">
+          <div className="text-center max-w-md px-8">
+            {/* Animated transfer icon */}
+            <div className="relative w-32 h-32 mx-auto mb-8">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-500 to-purple-500 animate-spin" style={{ animationDuration: '3s' }} />
+              <div className="absolute inset-2 rounded-full bg-black flex items-center justify-center">
+                <svg className="w-12 h-12 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+                </svg>
+              </div>
+            </div>
+            
+            <h2 className="text-2xl font-light mb-3">Connecting to Agent</h2>
+            <p className="text-gray-400 mb-6">
+              Please hold while we transfer you to a human agent and prepare a summary of your conversation...
+            </p>
+            
+            {/* Progress steps */}
+            <div className="space-y-3 text-left">
+              <div className="flex items-center gap-3 text-green-400">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <span className="text-sm">Conversation recorded</span>
+              </div>
+              <div className="flex items-center gap-3 text-orange-400 animate-pulse">
+                <div className="w-5 h-5 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
+                <span className="text-sm">Generating summary for agent...</span>
+              </div>
+              <div className="flex items-center gap-3 text-gray-500">
+                <div className="w-5 h-5 rounded-full border-2 border-gray-600" />
+                <span className="text-sm">Loading customer history...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Background gradient */}
+      <div className="fixed inset-0 bg-gradient-radial from-purple-900/5 via-transparent to-transparent pointer-events-none" />
+      
+      {/* Top Left Buttons */}
+      <div className="fixed top-8 left-8 flex gap-3 z-30">
+        {/* Message button */}
+        <button
+          onClick={() => setShowChat(true)}
+          className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 flex items-center justify-center"
+          title="Text chat"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
+        
+        {/* Talk to Human button - always visible */}
+        <button
+          onClick={() => triggerAgentHandoff()}
+          disabled={handoffPending}
+          className={`w-12 h-12 rounded-full bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 transition-all duration-300 flex items-center justify-center ${handoffPending ? 'animate-pulse' : ''}`}
+          title="Talk to a human agent"
+        >
+          {handoffPending ? (
+            <div className="w-5 h-5 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
+          ) : (
+            <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+            </svg>
+          )}
+        </button>
+        
+        {/* Clear History button */}
+        {chatMessages.length > 0 && (
+          <button
+            onClick={() => {
+              setChatMessages([]);
+              setTranscript('Waiting for input...');
+              setResponse('Processing...');
+              console.log('🗑️ Conversation history cleared');
+            }}
+            className="w-12 h-12 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 transition-all duration-300 flex items-center justify-center"
+            title="Clear conversation history"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        )}
+      </div>
+      
+      <main className="relative z-10 flex flex-col items-center justify-center w-full max-w-2xl px-5 py-10">
+        {/* Greeting */}
+        <div className="mb-16 text-center animate-fade-in">
+          <h1 className="text-5xl font-light mb-3 tracking-tight">{greetingText}</h1>
+          <p className="text-gray-500 text-sm font-light tracking-widest">{greetingTime}</p>
+        </div>
+
+        {/* Orb Container */}
+        <div className="relative w-[200px] h-[200px] mb-16">
+          {/* Glow effect */}
+          <div 
+            className="absolute inset-0 rounded-full bg-purple-500 blur-[130px] transition-opacity duration-150" 
+            style={{ opacity: glowOpacity }} 
+          />
+          
+          {/* Orb */}
+          <div 
+            className="relative h-full w-full rounded-full overflow-hidden shadow-[0_0_90px_rgba(102,126,234,0.45)] transition-transform duration-150 ease-out cursor-pointer hover:scale-105"
+            style={{ transform: `scale(${scale})` }}
+            onClick={isRecording ? stopRecording : startRecording}
+            title={isRecording ? "Click to stop" : "Click to start listening"}
+          >
+            <Iridescence 
+              amplitude={amplitude} 
+              speed={speed} 
+              color={orbColor} 
+              animationState={animationState}
+            />
+          </div>
+        </div>
+
+        {/* Status Text */}
+        <p className="text-lg text-gray-400 mb-2 animate-fade-in font-light tracking-wide">
+          {isRecording ? 'Listening... (speak naturally, will auto-stop)' : statusText}
+        </p>
+        
+        {/* Dual Pipeline Indicator */}
+        {quickResponsePlaying && (
+          <div className="flex items-center gap-2 mb-2 animate-fade-in">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            <span className="text-xs text-green-400/80 font-light">Quick response • Full answer loading...</span>
+          </div>
+        )}
+        
+        {/* Conversation Context Indicator */}
+        {chatMessages.length > 0 && (
+          <p className="text-sm text-purple-400/60 mb-8 animate-fade-in font-light">
+            {chatMessages.length} message{chatMessages.length !== 1 ? 's' : ''} in conversation
+          </p>
+        )}
+        {chatMessages.length === 0 && <div className="mb-8"></div>}
+
+        {/* Bottom Controls - No manual stop button needed */}
+      </main>
+
+      {/* Transcript Display - Always reserve space, fade in content */}
+      <div className="fixed top-8 right-8 w-96 bg-black/80 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-2xl transition-opacity duration-300">
+        {/* Citations Button */}
+        {currentCitations.length > 0 && (
+          <button
+            onClick={() => setShowCitations(true)}
+            className="w-full mb-4 px-4 py-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl flex items-center justify-center gap-2 transition-all text-xs text-purple-300"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            View {currentCitations.length} Source{currentCitations.length !== 1 ? 's' : ''}
+          </button>
+        )}
+        
+        <div className="mb-5">
+          <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">
+            Transcript
+          </div>
+          <div className={`bg-white/5 rounded-xl p-4 h-[80px] overflow-y-auto text-[13px] leading-relaxed text-gray-200 font-light transition-all duration-300 ${
+            transcript === 'Waiting for input...' || transcript === 'Listening...' ? 'opacity-40 blur-sm' : 'opacity-100 blur-0'
+          }`}>
+            {transcript}
+          </div>
+        </div>
+        
+        <div>
+          <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">Response</div>
+          <div className={`bg-white/5 rounded-xl p-4 h-[80px] overflow-y-auto text-[13px] leading-relaxed text-gray-200 font-light transition-all duration-500 ${
+            response === 'Processing...' ? 'opacity-40 blur-sm' : 'opacity-100 blur-0'
+          }`}>
+            {response}
+          </div>
+        </div>
+      </div>
+
+      {/* Subtitle - Reserved space with blur transition */}
+      <div className="fixed bottom-20 left-1/2 -translate-x-1/2 max-w-2xl w-[90%] h-[80px] flex items-center justify-center z-20">
+        <div className={`w-full bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl px-8 py-5 shadow-2xl transition-all duration-500 ${
+          showSubtitle ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-md scale-95 pointer-events-none'
+        }`}>
+          <p className="text-base text-gray-100 leading-relaxed font-light text-center">{subtitle}</p>
+        </div>
+      </div>
+
+      {/* Chat Modal */}
+      {showChat && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-end justify-center z-50 animate-fade-in">
+          <div className="w-full max-w-2xl bg-gray-900/95 backdrop-blur-xl border-t border-white/10 rounded-t-3xl flex flex-col h-[85vh] max-h-[700px] animate-slide-up">
+            {/* Chat Header */}
+            <div className="flex justify-between items-center px-6 py-5 border-b border-white/10">
+              <h2 className="text-xl font-light tracking-tight">Chat</h2>
+              <button
+                onClick={() => setShowChat(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-xl font-light"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+              {chatMessages.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                  <div className="flex flex-col gap-2 max-w-[75%]">
+                    <div className={`px-5 py-3 rounded-2xl text-[14px] leading-relaxed font-light ${
+                      msg.role === 'user' 
+                        ? 'bg-white text-black rounded-tr-sm' 
+                        : 'bg-white/10 text-gray-100 rounded-tl-sm'
+                    }`}>
+                      {msg.text}
+                    </div>
+                    {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setCurrentCitations(msg.citations || []);
+                          setShowCitations(true);
+                        }}
+                        className="self-start text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 transition-colors"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        View {msg.citations.length} source{msg.citations.length !== 1 ? 's' : ''}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Chat Input */}
+            <div className="px-5 py-5 border-t border-white/10">
+              {/* Talk to Human Button - always visible */}
+              <button
+                onClick={() => {
+                  setShowChat(false);
+                  triggerAgentHandoff();
+                }}
+                disabled={handoffPending}
+                className="w-full mb-3 px-4 py-2 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 rounded-xl flex items-center justify-center gap-2 transition-all text-sm font-light"
+              >
+                {handoffPending ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
+                    Connecting to agent...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+                    </svg>
+                    Talk to a Human Agent
+                  </>
+                )}
+              </button>
+              
+              <div className="flex gap-3">
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendChatMessage();
+                    }
+                  }}
+                  placeholder="Type your message..."
+                  className="flex-1 bg-white/10 border border-white/10 text-white placeholder:text-gray-500 px-4 py-3 rounded-2xl resize-none max-h-32 focus:outline-none focus:border-white/25 focus:bg-white/15 transition-all font-light text-[14px]"
+                  rows={1}
+                />
+                <button
+                  onClick={sendChatMessage}
+                  className="px-6 py-3 bg-white text-black rounded-full font-light hover:bg-gray-100 transition-all text-[14px]"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Citations Panel */}
+      {showCitations && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-end z-50 animate-fade-in" onClick={() => setShowCitations(false)}>
+          <div 
+            className="w-full max-w-md h-full bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col animate-slide-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Citations Header */}
+            <div className="flex justify-between items-center px-6 py-5 border-b border-white/10">
+              <div>
+                <h2 className="text-xl font-light tracking-tight">Source Citations</h2>
+                <p className="text-xs text-gray-400 mt-1">Retrieved from policy documents</p>
+              </div>
+              <button
+                onClick={() => setShowCitations(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-xl font-light"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Citations List */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+              {currentCitations.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">
+                  <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm">No citations available</p>
+                </div>
+              ) : (
+                currentCitations.map((citation, idx) => (
+                  <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3 animate-fade-in">
+                    {/* Citation Header */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="text-sm font-medium text-gray-200">{citation.policy_name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-400">
+                          <span>Page {citation.page_number}</span>
+                          {citation.score !== undefined && (
+                            <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-full">
+                              {(1 / (1 + citation.score) * 100).toFixed(0)}% match
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-500 font-mono">#{idx + 1}</span>
+                    </div>
+
+                    {/* Citation Content */}
+                    <div className="text-xs text-gray-300 leading-relaxed bg-black/30 rounded-lg p-3 border border-white/5">
+                      {citation.content}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Citations Footer */}
+            <div className="px-6 py-4 border-t border-white/10 text-xs text-gray-400 text-center">
+              Powered by FAISS vector similarity search
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes slide-left {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(100%); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .animate-slide-up {
+          animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .animate-slide-left {
+          animation: slide-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+      `}</style>
+    </div>
+  );
+}

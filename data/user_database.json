@@ -1,0 +1,192 @@
+{
+  "users": {
+    "USR-001": {
+      "user_id": "USR-001",
+      "personal_info": {
+        "name": "John Smith",
+        "email": "john.smith@email.com",
+        "phone": "+1-555-123-4567",
+        "address": "123 Oak Street, Manchester, M1 2AB",
+        "date_of_birth": "1985-03-15",
+        "customer_since": "2019-06-01"
+      },
+      "policy": {
+        "policy_number": "HOM-2024-789456",
+        "policy_type": "Home Insurance - Premium",
+        "start_date": "2024-01-15",
+        "end_date": "2025-01-14",
+        "premium_monthly": 85.50,
+        "payment_status": "current",
+        "last_payment_date": "2024-12-01",
+        "coverage": {
+          "buildings": 350000,
+          "contents": 75000,
+          "personal_liability": 2000000,
+          "alternative_accommodation": 50000,
+          "accidental_damage": true,
+          "legal_expenses": true
+        },
+        "excess": {
+          "standard": 250,
+          "escape_of_water": 500,
+          "subsidence": 1000
+        },
+        "property_details": {
+          "property_type": "Detached House",
+          "bedrooms": 4,
+          "year_built": 1995,
+          "alarm_system": true,
+          "smoke_detectors": true
+        }
+      },
+      "previous_claims": [
+        {
+          "claim_id": "CLM-2023-001",
+          "date": "2023-08-15",
+          "type": "Water Damage",
+          "description": "Burst pipe in upstairs bathroom caused water damage to ceiling and floor below",
+          "status": "settled",
+          "amount_claimed": 4500,
+          "amount_paid": 4000,
+          "notes": "Excess of £500 applied for escape of water"
+        },
+        {
+          "claim_id": "CLM-2022-003",
+          "date": "2022-11-20",
+          "type": "Theft",
+          "description": "Bicycle stolen from locked garden shed",
+          "status": "settled",
+          "amount_claimed": 850,
+          "amount_paid": 600,
+          "notes": "Standard excess applied, depreciation considered"
+        }
+      ],
+      "previous_tickets": [
+        {
+          "ticket_id": "TKT-2024-089",
+          "date": "2024-10-05",
+          "subject": "Policy Renewal Query",
+          "summary": "Customer asked about renewal process and potential premium increase. Explained auto-renewal and confirmed no claims discount.",
+          "status": "resolved",
+          "resolution": "Customer satisfied with explanation, confirmed auto-renewal",
+          "agent": "Sarah Johnson"
+        },
+        {
+          "ticket_id": "TKT-2024-056",
+          "date": "2024-07-12",
+          "subject": "Coverage Clarification",
+          "summary": "Customer inquired about coverage for home office equipment. Confirmed contents coverage includes office equipment up to £5000.",
+          "status": "resolved",
+          "resolution": "Provided detailed breakdown of contents coverage",
+          "agent": "Mike Peters"
+        },
+        {
+          "ticket_id": "TKT-2024-023",
+          "date": "2024-03-28",
+          "subject": "Payment Method Update",
+          "summary": "Customer requested to change payment from direct debit to credit card. Processed change successfully.",
+          "status": "resolved",
+          "resolution": "Payment method updated, next payment on new card",
+          "agent": "Sarah Johnson"
+        },
+        {
+          "ticket_id": "TKT-2023-112",
+          "date": "2023-08-16",
+          "subject": "Water Damage Claim Follow-up",
+          "summary": "Customer called to check status of water damage claim and get estimate timeline.",
+          "status": "resolved",
+          "resolution": "Claim approved, payment processed within 5 days",
+          "agent": "David Chen"
+        }
+      ],
+      "customer_notes": [
+        {
+          "date": "2024-10-05",
+          "note": "Long-term customer, always pays on time. Has NCB protected.",
+          "added_by": "Sarah Johnson"
+        },
+        {
+          "date": "2023-08-20",
+          "note": "Handled water damage claim efficiently. Customer was pleased with quick response.",
+          "added_by": "David Chen"
+        }
+      ],
+      "preferences": {
+        "contact_preference": "email",
+        "language": "English",
+        "marketing_opt_in": false,
+        "paperless_billing": true
+      },
+      "risk_score": "low",
+      "no_claims_bonus": {
+        "years": 5,
+        "protected": true
+      }
+    },
+    "USR-002": {
+      "user_id": "USR-002",
+      "personal_info": {
+        "name": "Emma Wilson",
+        "email": "emma.wilson@email.com",
+        "phone": "+1-555-987-6543",
+        "address": "45 Pine Avenue, London, SE1 4RT",
+        "date_of_birth": "1978-09-22",
+        "customer_since": "2021-02-15"
+      },
+      "policy": {
+        "policy_number": "HOM-2024-654321",
+        "policy_type": "Home Insurance - Standard",
+        "start_date": "2024-02-15",
+        "end_date": "2025-02-14",
+        "premium_monthly": 62.00,
+        "payment_status": "current",
+        "last_payment_date": "2024-12-01",
+        "coverage": {
+          "buildings": 280000,
+          "contents": 50000,
+          "personal_liability": 1000000,
+          "alternative_accommodation": 30000,
+          "accidental_damage": false,
+          "legal_expenses": true
+        },
+        "excess": {
+          "standard": 350,
+          "escape_of_water": 500,
+          "subsidence": 1000
+        },
+        "property_details": {
+          "property_type": "Semi-Detached House",
+          "bedrooms": 3,
+          "year_built": 2005,
+          "alarm_system": false,
+          "smoke_detectors": true
+        }
+      },
+      "previous_claims": [],
+      "previous_tickets": [
+        {
+          "ticket_id": "TKT-2024-101",
+          "date": "2024-11-15",
+          "subject": "Adding Accidental Damage Cover",
+          "summary": "Customer inquired about adding accidental damage coverage. Provided quote for additional premium.",
+          "status": "pending",
+          "resolution": "Quote sent, awaiting customer decision",
+          "agent": "Mike Peters"
+        }
+      ],
+      "customer_notes": [],
+      "preferences": {
+        "contact_preference": "phone",
+        "language": "English",
+        "marketing_opt_in": true,
+        "paperless_billing": false
+      },
+      "risk_score": "low",
+      "no_claims_bonus": {
+        "years": 3,
+        "protected": false
+      }
+    }
+  },
+  "current_session_user": "USR-001"
+}

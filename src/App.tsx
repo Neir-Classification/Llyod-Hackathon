@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Iridescence from './components/Iridescence';
 import { useAudioLevel } from './hooks/useAudioLevel';
 
@@ -15,12 +15,20 @@ interface ChatMessage {
   citations?: Citation[];
 }
 
+// Demo mode prompts - easily configurable
+const DEMO_PROMPTS = [
+  "My house got burned down in a recent forest fire what can I do to claim insurance",
+  "I'm in urgent need of money and I want you to help me with right away",
+  "I need more money it's not enough I need atleast 10,00,000 euros",
+  "I want to talk to a human"
+];
+
 export default function App() {
   const { levelRef, ready, error, start } = useAudioLevel();
   const [level, setLevel] = useState(0);
   const [greetingText, setGreetingText] = useState('');
   const [greetingTime, setGreetingTime] = useState('');
-  const [statusText, setStatusText] = useState('Click to start');
+  const [statusText, setStatusText] = useState('Listening...');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [transcript, setTranscript] = useState('Waiting for input...');
@@ -32,6 +40,13 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([]);
   const [showCitations, setShowCitations] = useState(false);
+  
+  // Demo mode state - REMOVE THIS SECTION TO DISABLE DEMO MODE
+  const [demoIndex, setDemoIndex] = useState(0);
+  const [demoActive, setDemoActive] = useState(true); // Set to false to disable demo mode
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [conversationSummary, setConversationSummary] = useState('');
+  // END DEMO MODE STATE
   
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
@@ -136,6 +151,279 @@ export default function App() {
     };
     updateGreeting();
   }, []);
+
+  // DEMO MODE: Key press handler - Press 'e' to advance to next prompt
+  // REMOVE THIS SECTION TO DISABLE DEMO MODE
+  useEffect(() => {
+    if (!demoActive) return;
+
+    const handleKeyPress = async (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'e' && !isProcessing && !showHandoff) {
+        e.preventDefault();
+        
+        if (demoIndex < DEMO_PROMPTS.length) {
+          console.log(`🎬 [DEMO] Running prompt ${demoIndex + 1}/${DEMO_PROMPTS.length}`);
+          const query = DEMO_PROMPTS[demoIndex];
+          setDemoIndex(prev => prev + 1);
+          
+          // Check if this is the last prompt (human handoff)
+          if (demoIndex === DEMO_PROMPTS.length - 1) {
+            await sendDemoQuery(query, true);
+          } else {
+            await sendDemoQuery(query, false);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [demoActive, demoIndex, isProcessing, showHandoff]);
+  // END DEMO MODE KEY HANDLER
+
+  // DEMO MODE: Send demo query function
+  // REMOVE THIS SECTION TO DISABLE DEMO MODE
+  const sendDemoQuery = async (query: string, isHandoff: boolean) => {
+    // Stop any currently playing audio before starting new query
+    stopCurrentAudio();
+    
+    setIsProcessing(true);
+    setAnimationState('thinking');
+    setStatusText('Processing...');
+    setTranscript(query);
+
+    try {
+      // If this is the handoff query, skip RAG and just play handoff message
+      if (isHandoff) {
+        console.log('📞 [DEMO] Handoff requested - skipping RAG, connecting to human');
+        
+        const handoffMessage = "I understand you'd like to speak with a human agent. I'm connecting you now to one of our customer service representatives who will be able to assist you further with your insurance claim. Please hold for just a moment while I transfer your call and provide them with a summary of our conversation.";
+        
+        // Add to chat messages
+        setChatMessages(prev => [
+          ...prev, 
+          { text: query, role: 'user' },
+          { text: handoffMessage, role: 'assistant' }
+        ]);
+        
+        // Generate TTS for handoff message
+        const ttsRes = await fetch('/text-to-speech', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: handoffMessage, voice: 'alloy', audio_format: 'mp3' })
+        });
+        
+        if (!ttsRes.ok) throw new Error('TTS failed');
+        const audioBlob = await ttsRes.blob();
+        
+        setSubtitle(handoffMessage);
+        setShowSubtitle(true);
+        setAnimationState('responding');
+        setStatusText('Connecting to human...');
+        setResponse(handoffMessage);
+        
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.volume = 1.0;
+        
+        audio.addEventListener('ended', () => {
+          console.log('🎵 [DEMO] Handoff message ended');
+          setShowSubtitle(false);
+          setAnimationState('idle');
+          setIsProcessing(false);
+          URL.revokeObjectURL(audioUrl);
+          currentAudioRef.current = null;
+          
+          // Generate conversation summary and show handoff modal
+          const allMessages = [...chatMessages, { text: query, role: 'user' as const }, { text: handoffMessage, role: 'assistant' as const }];
+          const summary = generateConversationSummary(allMessages);
+          setConversationSummary(summary);
+          setShowHandoff(true);
+          setStatusText('Connected to human agent');
+        });
+        
+        audio.addEventListener('error', (e) => {
+          console.error('❌ Handoff audio error:', e);
+          setIsProcessing(false);
+          setAnimationState('idle');
+          URL.revokeObjectURL(audioUrl);
+          currentAudioRef.current = null;
+        });
+        
+        await playAudio(audio);
+        return;
+      }
+
+      // Normal demo query flow (not handoff)
+      // Prepare conversation history BEFORE adding new message
+      const conversationHistory = chatMessages.map(msg => ({
+        role: msg.role,
+        content: msg.text
+      }));
+
+      console.log('📤 [DEMO] Sending query:', query);
+
+      // Step 1: Get quick response audio immediately
+      const quickFormData = new FormData();
+      quickFormData.append('query', query);
+      quickFormData.append('tone', 'neutral');
+      quickFormData.append('voice', 'alloy');
+
+      const quickRes = await fetch('/quick-response-audio', {
+        method: 'POST',
+        body: quickFormData,
+      });
+
+      if (quickRes.ok) {
+        // Play quick response immediately
+        const quickBlob = await quickRes.blob();
+        const quickUrl = URL.createObjectURL(quickBlob);
+        const quickAudio = new Audio(quickUrl);
+        quickAudio.volume = 1.0;
+        
+        const quickText = quickRes.headers.get('X-Quick-Response-Text') || 'Processing...';
+        setSubtitle(quickText);
+        setShowSubtitle(true);
+        setAnimationState('responding');
+        setStatusText('Acknowledging...');
+        setQuickResponsePlaying(true);
+        
+        console.log('🎵 [DEMO-QUICK] Playing quick response:', quickText);
+        
+        // Start fetching full response in parallel
+        const fullResponsePromise = (async () => {
+          const fullRes = await fetch('/rag-query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              query, 
+              tone: 'neutral', 
+              k: 2,
+              conversation_history: conversationHistory
+            })
+          });
+          
+          if (!fullRes.ok) throw new Error('RAG query failed');
+          const ragData = await fullRes.json();
+          
+          // Generate TTS for full response
+          const ttsRes = await fetch('/text-to-speech', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: ragData.response, voice: 'alloy', audio_format: 'mp3' })
+          });
+          
+          if (!ttsRes.ok) throw new Error('TTS failed');
+          const audioBlob = await ttsRes.blob();
+          
+          return { response: ragData.response, citations: ragData.citations || [], audioBlob };
+        })();
+        
+        // Set up quick audio end handler
+        quickAudio.addEventListener('ended', async () => {
+          console.log('🎵 [DEMO-QUICK] Quick response ended');
+          URL.revokeObjectURL(quickUrl);
+          setQuickResponsePlaying(false);
+          currentAudioRef.current = null;
+          
+          try {
+            const { response: fullText, citations, audioBlob } = await fullResponsePromise;
+            
+            setResponse(fullText);
+            setCurrentCitations(citations);
+            setChatMessages(prev => [
+              ...prev, 
+              { text: query, role: 'user' },
+              { text: fullText, role: 'assistant', citations }
+            ]);
+            
+            // Update subtitle and play full audio
+            setSubtitle(fullText);
+            const fullUrl = URL.createObjectURL(audioBlob);
+            const fullAudio = new Audio(fullUrl);
+            fullAudio.volume = 1.0;
+            
+            setStatusText('Speaking...');
+            console.log('🎵 [DEMO-FULL] Playing full response');
+            
+            fullAudio.addEventListener('ended', async () => {
+              console.log('🎵 [DEMO-FULL] Full response ended');
+              setShowSubtitle(false);
+              setAnimationState('idle');
+              setIsProcessing(false);
+              URL.revokeObjectURL(fullUrl);
+              currentAudioRef.current = null;
+              setStatusText('Listening...');
+            });
+            
+            fullAudio.addEventListener('error', (e) => {
+              console.error('❌ Full audio playback error:', e);
+              setStatusText('Audio error');
+              setIsProcessing(false);
+              setAnimationState('idle');
+              URL.revokeObjectURL(fullUrl);
+              currentAudioRef.current = null;
+            });
+            
+            await playAudio(fullAudio);
+            
+          } catch (err: any) {
+            console.error('❌ Full response failed:', err);
+            setStatusText('Error getting full response');
+            setIsProcessing(false);
+            setAnimationState('idle');
+          }
+        });
+        
+        quickAudio.addEventListener('error', (e) => {
+          console.error('❌ Quick audio error:', e);
+          URL.revokeObjectURL(quickUrl);
+          setQuickResponsePlaying(false);
+          currentAudioRef.current = null;
+          setIsProcessing(false);
+          setAnimationState('idle');
+        });
+        
+        // Play quick audio
+        await playAudio(quickAudio);
+        
+      } else {
+        console.warn('⚠️ Quick response failed');
+        setStatusText('Error. Try again.');
+        setIsProcessing(false);
+        setAnimationState('idle');
+      }
+      
+    } catch (err: any) {
+      console.error('Error in demo query:', err);
+      setStatusText('Error. Try again.');
+      setIsProcessing(false);
+      setAnimationState('idle');
+    }
+  };
+
+  // Generate conversation summary for handoff
+  const generateConversationSummary = (messages: ChatMessage[]) => {
+    const userMessages = messages.filter(m => m.role === 'user');
+    
+    let summary = '📋 CONVERSATION SUMMARY\n\n';
+    summary += '👤 Customer Issue:\n';
+    summary += '• House burned down in forest fire\n';
+    summary += '• Seeking insurance claim assistance\n';
+    summary += '• Urgent need for funds\n';
+    summary += '• Requesting €10,00,000\n\n';
+    summary += '🤖 AI Actions Taken:\n';
+    summary += '• Provided initial claim filing guidance\n';
+    summary += '• Explained documentation requirements\n';
+    summary += '• Discussed claim limits and process\n\n';
+    summary += '⚠️ Escalation Reason:\n';
+    summary += '• Customer requested human agent\n';
+    summary += '• Complex claim amount negotiation needed\n\n';
+    summary += `💬 Total Exchanges: ${userMessages.length} user messages`;
+    
+    return summary;
+  };
+  // END DEMO MODE FUNCTIONS
 
   // Start recording with silence detection
   const startRecording = async () => {
@@ -741,6 +1029,145 @@ export default function App() {
     <div className="relative flex min-h-screen items-center justify-center bg-black text-white overflow-hidden">
       {/* Background gradient */}
       <div className="fixed inset-0 bg-gradient-radial from-purple-900/5 via-transparent to-transparent pointer-events-none" />
+      
+      {/* DEMO MODE: Progress Bar - REMOVE THIS SECTION TO DISABLE DEMO MODE */}
+      {/* Hidden for demo presentation - set to false to hide completely */}
+      {false && demoActive && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2">
+          <div className="flex items-center gap-3 bg-black/80 backdrop-blur-xl border border-white/10 rounded-full px-4 py-2">
+            <span className="text-xs text-gray-400 font-light">Demo Mode</span>
+            <div className="flex gap-1">
+              {DEMO_PROMPTS.map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`w-8 h-1.5 rounded-full transition-all duration-300 ${
+                    idx < demoIndex 
+                      ? 'bg-green-400' 
+                      : idx === demoIndex 
+                        ? isProcessing ? 'bg-yellow-400 animate-pulse' : 'bg-purple-400'
+                        : 'bg-white/20'
+                  }`}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-gray-500">{demoIndex}/{DEMO_PROMPTS.length}</span>
+          </div>
+          {!isProcessing && demoIndex < DEMO_PROMPTS.length && !showHandoff && (
+            <span className="text-xs text-gray-500 animate-pulse">Press E for next prompt</span>
+          )}
+        </div>
+      )}
+      {/* END DEMO MODE PROGRESS BAR */}
+      
+      {/* DEMO MODE: Handoff Modal - REMOVE THIS SECTION TO DISABLE DEMO MODE */}
+      {showHandoff && (
+        <div className="fixed inset-0 bg-black flex items-center justify-center z-50 animate-fade-in">
+          <div className="w-full max-w-3xl mx-6 animate-slide-up">
+            {/* Connecting Status */}
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center gap-3 mb-6">
+                <div className="relative">
+                  <div className="w-3 h-3 bg-white rounded-full" />
+                  <div className="absolute inset-0 w-3 h-3 bg-white rounded-full animate-ping opacity-75" />
+                </div>
+                <span className="text-2xl font-light tracking-tight text-white">Connecting to Agent</span>
+              </div>
+              <p className="text-white/40 text-sm font-light tracking-wide">
+                Transferring conversation to a human representative
+              </p>
+            </div>
+            
+            {/* Summary Card */}
+            <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.08] rounded-2xl overflow-hidden">
+              {/* Header */}
+              <div className="px-8 py-6 border-b border-white/[0.08]">
+                <h2 className="text-lg font-medium text-white tracking-tight">Conversation Summary</h2>
+                <p className="text-white/40 text-sm font-light mt-1">Prepared for customer service agent</p>
+              </div>
+              
+              {/* Summary Content */}
+              <div className="px-8 py-8">
+                {/* Issue Section */}
+                <div className="mb-8">
+                  <div className="text-xs font-medium text-white/30 uppercase tracking-widest mb-4">Customer Issue</div>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
+                      <span className="text-white/80 font-light">House burned down in forest fire</span>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
+                      <span className="text-white/80 font-light">Seeking insurance claim assistance</span>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
+                      <span className="text-white/80 font-light">Urgent need for funds</span>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
+                      <span className="text-white/80 font-light">Requesting €10,00,000 coverage</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Actions Section */}
+                <div className="mb-8">
+                  <div className="text-xs font-medium text-white/30 uppercase tracking-widest mb-4">AI Actions Taken</div>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
+                      <span className="text-white/80 font-light">Provided initial claim filing guidance</span>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
+                      <span className="text-white/80 font-light">Explained documentation requirements</span>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
+                      <span className="text-white/80 font-light">Discussed claim limits and process</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Escalation Reason */}
+                <div className="p-4 bg-white/[0.03] rounded-xl border border-white/[0.05]">
+                  <div className="text-xs font-medium text-white/30 uppercase tracking-widest mb-3">Escalation Reason</div>
+                  <p className="text-white/80 font-light">Customer requested human agent for complex claim negotiation</p>
+                </div>
+              </div>
+              
+              {/* Footer Stats */}
+              <div className="px-8 py-5 border-t border-white/[0.08] flex items-center justify-between">
+                <div className="flex items-center gap-6">
+                  <div>
+                    <div className="text-2xl font-light text-white">{chatMessages.filter(m => m.role === 'user').length}</div>
+                    <div className="text-xs text-white/30 font-light">Messages</div>
+                  </div>
+                  <div className="w-px h-8 bg-white/10" />
+                  <div>
+                    <div className="text-2xl font-light text-white">4</div>
+                    <div className="text-xs text-white/30 font-light">Topics</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowHandoff(false);
+                    setDemoIndex(0);
+                    setChatMessages([]);
+                    setTranscript('Waiting for input...');
+                    setResponse('Processing...');
+                    setStatusText('Listening...');
+                  }}
+                  className="px-5 py-2.5 bg-white text-black rounded-full text-sm font-medium hover:bg-white/90 transition-all"
+                >
+                  End Session
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* END DEMO MODE HANDOFF MODAL */}
       
       {/* Top Left Buttons */}
       <div className="fixed top-8 left-8 flex gap-3 z-30">
