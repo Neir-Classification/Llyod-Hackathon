@@ -264,9 +264,9 @@ class ExplainabilityEngine:
         
         # Weighted combination
         confidence = (
-            retrieval_confidence * 0.4 +
-            overlap * 0.3 +
-            source_factor * 0.3
+            retrieval_confidence * 0.6 +
+            overlap * 0.2 +
+            source_factor * 0.2
         )
         
         return float(min(max(confidence, 0.0), 1.0))
