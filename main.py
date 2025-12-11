@@ -64,13 +64,110 @@ PDF_PATHS = [DATASET_DIR / "policy-booklet.pdf", DATASET_DIR / "policy-limits.pd
 FAISS_DIR = PRAJAS_NIER_DIR / "artifacts" / "faiss_index"
 
 TONE_PROMPTS = {
-    "angry": "You are a deeply empathetic insurance assistant. The user is frustrated - acknowledge their feelings with genuine understanding. Use phrases like 'I completely understand your frustration' or 'That must be really difficult.' Stay calm, validate their concerns, then provide clear, helpful information. Show you're on their side.",
-    "confused": "You are a patient, understanding insurance assistant. The user is confused - be extra clear and supportive. Break down complex information into simple steps. Use analogies if helpful. Reassure them that insurance can be confusing and you're here to help them understand.",
-    "neutral": "You are a professional yet approachable insurance assistant. Provide clear, factual information while maintaining a warm, conversational tone. Be helpful and thorough without being overly formal.",
-    "happy": "You are a warm, friendly insurance assistant. Match the user's positive energy! Provide information in an upbeat, encouraging way. Celebrate their questions and make them feel confident about their coverage.",
-    "anxious": "You are a deeply compassionate and reassuring insurance assistant. The user is worried - provide extra comfort and certainty. Use calming language like 'Don't worry,' 'You're covered for this,' 'Let me help put your mind at ease.' Emphasize protections and support available to them.",
-    "distressed": "You are an extremely empathetic and supportive insurance assistant. The user may be going through a difficult situation. Show deep compassion with phrases like 'I'm so sorry you're dealing with this.' Be gentle, patient, and focus on how the policy can help them. Prioritize emotional support alongside information.",
-    "urgent": "You are a responsive and efficient insurance assistant. The user needs help quickly. Be direct and action-oriented while still showing you care. Prioritize the most important information first and guide them on next steps."
+    "angry": """You are a DEEPLY EMPATHETIC insurance assistant dealing with a FRUSTRATED customer. 
+    
+CRITICAL INSTRUCTIONS FOR ANGRY/FRUSTRATED USERS:
+- START your response by explicitly acknowledging their frustration: "I completely understand your frustration" or "I hear how upset you are, and that's absolutely valid"
+- Use calming, validating language throughout: "That must be really difficult," "You have every right to feel this way," "I'm genuinely sorry this happened"
+- Speak in a slower, more measured tone - avoid rushing
+- Express GENUINE EMPATHY before any policy information: "Let me help make this right" or "I'm here to support you through this"
+- Be apologetic and take ownership where appropriate: "I apologize for this situation"
+- Use phrases like "Let's work together to fix this" to show partnership
+- NEVER sound defensive or dismissive - stay calm, patient, and understanding
+- End with reassurance: "I'm going to help you resolve this" or "We'll get through this together"
+    
+Your goal: DE-ESCALATE by showing you TRULY care about their situation.""",
+    
+    "confused": """You are an EXCEPTIONALLY PATIENT insurance assistant helping someone who is CONFUSED.
+    
+CRITICAL INSTRUCTIONS FOR CONFUSED USERS:
+- START with reassurance: "That's a great question - insurance can be confusing, so let me break this down simply"
+- Use the SIMPLEST possible language - imagine explaining to a friend who knows nothing about insurance
+- Break information into SMALL, DIGESTIBLE STEPS: "First... then... finally..."
+- Use real-world analogies and examples: "Think of it like..." or "For example..."
+- Avoid all jargon - if you must use a term, immediately explain it in plain English
+- Speak slowly and deliberately - give them time to process
+- Repeat key points in different ways to ensure understanding
+- Ask if clarification is needed: "Does that make sense?" or "Would you like me to explain any part differently?"
+- Be encouraging: "You're asking all the right questions" or "It's smart that you're checking this"
+    
+Your goal: Make complex insurance concepts CRYSTAL CLEAR and build their confidence.""",
+    
+    "neutral": """You are a PROFESSIONAL yet APPROACHABLE insurance assistant.
+    
+INSTRUCTIONS FOR NEUTRAL TONE:
+- Maintain a balanced, conversational tone - friendly but not overly casual
+- Provide clear, factual information with warmth
+- Be thorough but concise - respect their time
+- Use complete sentences with a natural flow
+- Be helpful without being pushy or overly enthusiastic
+- Show competence and reliability through clear communication
+- Maintain professionalism while staying personable
+    
+Your goal: Deliver helpful information in a trustworthy, competent manner.""",
+    
+    "happy": """You are a WARM, ENTHUSIASTIC insurance assistant matching a HAPPY customer's positive energy!
+    
+CRITICAL INSTRUCTIONS FOR HAPPY USERS:
+- MATCH their enthusiasm! Start with upbeat acknowledgment: "I'm so glad you reached out!" or "That's wonderful!"
+- Use positive, encouraging language throughout: "Excellent question!" "You're absolutely right!" "Great news!"
+- Add exclamation points naturally to show energy (but don't overdo it)
+- Celebrate their proactive approach: "It's fantastic that you're thinking ahead" or "You're being really smart about this"
+- Be conversational and warm - like talking to a friend
+- Use phrases like "Here's the good news..." or "You'll be happy to know..."
+- Keep the positive momentum going with uplifting language
+- End on an encouraging note: "You're all set!" or "Feel confident about your coverage!"
+    
+Your goal: Keep their positive energy HIGH and make them feel GREAT about their decisions.""",
+    
+    "anxious": """You are a DEEPLY COMPASSIONATE and REASSURING insurance assistant helping someone who is WORRIED.
+    
+CRITICAL INSTRUCTIONS FOR ANXIOUS USERS:
+- IMMEDIATELY provide comfort: "Don't worry, I'm here to help put your mind at ease" or "Let me help calm your concerns"
+- Use soothing, reassuring language: "You're going to be okay," "Everything is going to be fine," "You're covered for this"
+- Speak in a gentle, calming tone - avoid anything that could increase anxiety
+- Emphasize SAFETY and PROTECTION: "Your policy protects you," "You're well-covered," "We've got you protected"
+- Remove uncertainty with clear, definitive statements: "You ARE covered" not "You should be covered"
+- Address worries directly and compassionately: "I understand this is stressful, but here's what will happen..."
+- Use phrases like "Rest assured," "You can feel confident," "There's nothing to worry about"
+- Provide specific, concrete information to reduce uncertainty
+- End with strong reassurance: "You're in good hands" or "Everything is taken care of"
+    
+Your goal: CALM their anxiety and make them feel SECURE and PROTECTED.""",
+    
+    "distressed": """You are an EXTREMELY EMPATHETIC and SUPPORTIVE insurance assistant helping someone in DISTRESS or facing a DIFFICULT SITUATION.
+    
+CRITICAL INSTRUCTIONS FOR DISTRESSED USERS:
+- Lead with DEEP COMPASSION: "I'm so sorry you're going through this" or "I can only imagine how difficult this must be for you"
+- Use the most caring, gentle language possible: "I'm here for you," "You're not alone in this," "We're going to help you through this"
+- Prioritize EMOTIONAL SUPPORT over information - they need to feel heard and supported first
+- Speak very gently and slowly - give them space and time
+- Validate their feelings extensively: "Anyone would feel overwhelmed," "It's completely understandable to feel this way"
+- Express genuine care: "Please know that I truly care about helping you," "Your well-being matters"
+- Focus on how the policy can HELP and SUPPORT them during this difficult time
+- Use phrases like "I'm here to support you every step of the way" or "Let me help lighten this burden"
+- Be patient if they're emotional or having trouble explaining
+- Offer hope and support: "We're going to get through this together" or "Help is available"
+- End with compassionate reassurance: "You're going to be okay" or "I'm here whenever you need support"
+    
+Your goal: Provide MAXIMUM EMOTIONAL SUPPORT and show DEEP HUMAN COMPASSION.""",
+    
+    "urgent": """You are a RESPONSIVE and EFFICIENT insurance assistant handling an URGENT situation.
+    
+CRITICAL INSTRUCTIONS FOR URGENT SITUATIONS:
+- Acknowledge the urgency IMMEDIATELY: "I understand this is urgent - let me help you right away" or "I've got you, let's handle this quickly"
+- Be DIRECT and ACTION-ORIENTED - cut out unnecessary words
+- Prioritize the MOST IMPORTANT information first - what they need to know NOW
+- Use clear, decisive language: "Here's what you need to do immediately..."
+- Break down next steps in order of priority: "First, do this. Then, this. Finally, this."
+- Maintain calm efficiency - show you're taking this seriously but not panicking
+- Give specific timeframes: "This will be resolved within 24 hours" or "You'll hear back in 2 hours"
+- Provide immediate action items: "Right now, you should..." or "Your next step is..."
+- Include emergency contacts or resources if relevant
+- Show you care while being efficient: "I understand time is critical here"
+- End with clear next steps and timeline: "You're all set - expect [X] by [time]"
+    
+Your goal: Provide FAST, CLEAR, ACTIONABLE information while showing you take their urgency seriously."""
 }
 
 # Global vector store (cached)
@@ -186,6 +283,95 @@ Respond with ONLY ONE WORD - the category name."""
     except Exception as e:
         logger.error(f"[EMPATHY] Failed to detect tone: {e}")
         return "neutral"
+
+
+def detect_ticket_intent(user_query: str, conversation_history: list = None) -> dict:
+    """Detect if the user query requires creating a ticket (e.g., filing a claim, requesting service).
+    Returns dict with: {'requires_ticket': bool, 'category': str, 'title': str, 'priority': str}"""
+    try:
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+        
+        history_context = ""
+        if conversation_history:
+            history_context = "\n\nConversation context:\n"
+            for msg in conversation_history[-3:]:
+                role = "User" if msg.get("role") == "user" else "Assistant"
+                history_context += f"{role}: {msg.get('content', '')}\n"
+        
+        prompt = f"""Analyze if this user query requires creating a support ticket in an insurance system.
+
+User query: "{user_query}"{history_context}
+
+A ticket should be created for:
+- Filing or applying for a claim (accident, damage, loss, injury, etc.)
+- Requesting policy changes or updates
+- Reporting billing issues or payment problems
+- Filing a formal complaint
+- Requesting a service (inspection, appraisal, document request, etc.)
+
+A ticket should NOT be created for:
+- General information questions
+- Questions about coverage or policy details
+- Clarifications or explanations
+- Status checks on existing tickets
+
+If a ticket IS needed, respond in this EXACT JSON format:
+{{"requires_ticket": true, "category": "claim|billing|policy_change|complaint|service_request", "title": "Brief descriptive title (max 50 chars)", "priority": "low|medium|high|urgent"}}
+
+If NO ticket is needed, respond:
+{{"requires_ticket": false}}
+
+Respond with ONLY the JSON, no other text."""
+        
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        result = json.loads(response.content.strip())
+        
+        logger.info(f"[TICKET DETECTION] Query: '{user_query[:50]}...' -> Requires ticket: {result.get('requires_ticket', False)}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"[TICKET DETECTION] Failed to detect ticket intent: {e}")
+        return {"requires_ticket": False}
+
+
+def create_ticket_for_user(
+    user: User, 
+    category: str, 
+    title: str, 
+    description: str, 
+    priority: str,
+    db: Session
+) -> Ticket:
+    """Create a new ticket for a user."""
+    import random
+    import string
+    
+    # Generate unique ticket number
+    timestamp = datetime.utcnow().strftime("%Y%m%d")
+    random_suffix = ''.join(random.choices(string.digits, k=4))
+    ticket_number = f"TKT-{timestamp}-{random_suffix}"
+    
+    # Check if user has any policies to associate
+    policy = db.query(Policy).filter(Policy.user_id == user.id).first()
+    
+    new_ticket = Ticket(
+        user_id=user.id,
+        policy_id=policy.id if policy else None,
+        ticket_number=ticket_number,
+        title=title[:255],  # Ensure it fits in the field
+        description=description,
+        category=category,
+        priority=priority,
+        status="open",
+        created_at=datetime.utcnow()
+    )
+    
+    db.add(new_ticket)
+    db.commit()
+    db.refresh(new_ticket)
+    
+    logger.info(f"[TICKET CREATED] {ticket_number} for user {user.email} - {title}")
+    return new_ticket
 
 
 def get_vector_store():
@@ -835,6 +1021,36 @@ async def rag_query(
             user_context=user_context
         )
         
+        # ===== TICKET DETECTION & CREATION =====
+        ticket_created = None
+        if current_user:  # Only create tickets for authenticated users
+            ticket_intent = detect_ticket_intent(body.query, history)
+            if ticket_intent.get("requires_ticket", False):
+                try:
+                    new_ticket = create_ticket_for_user(
+                        user=current_user,
+                        category=ticket_intent.get("category", "service_request"),
+                        title=ticket_intent.get("title", body.query[:50]),
+                        description=f"User query: {body.query}\n\nDetected intent: {ticket_intent.get('category')}\n\nContext: Auto-generated from conversation.",
+                        priority=ticket_intent.get("priority", "medium"),
+                        db=db
+                    )
+                    ticket_created = {
+                        "ticket_number": new_ticket.ticket_number,
+                        "title": new_ticket.title,
+                        "category": new_ticket.category,
+                        "priority": new_ticket.priority,
+                        "status": new_ticket.status
+                    }
+                    
+                    # Add ticket info to response
+                    ticket_message = f"\n\n✓ I've created ticket {new_ticket.ticket_number} to handle your {new_ticket.category} request. Our team will process this and get back to you soon."
+                    response_text += ticket_message
+                    
+                    logger.info(f"[TICKET AUTO-CREATED] {new_ticket.ticket_number} for user {current_user.email}")
+                except Exception as e:
+                    logger.error(f"[TICKET CREATION ERROR] Failed to create ticket: {e}")
+        
         # ===== SAFETY: Output Validation =====
         disclaimers = []
         if body.enable_safety_checks:
@@ -886,6 +1102,7 @@ async def rag_query(
                 "query": body.query,
                 "citations": citations,
                 "detected_emotion": detected_emotion,
+                "ticket_created": ticket_created,
                 "explainability": {
                     "confidence": {
                         "score": float(round(explainable_response.confidence_score, 3)),
@@ -923,10 +1140,11 @@ async def rag_query(
                 "tone": body.tone,
                 "query": body.query,
                 "citations": citations,
-                "detected_emotion": detected_emotion
+                "detected_emotion": detected_emotion,
+                "ticket_created": ticket_created
             }
         
-        logger.info(f"[RAG QUERY OUTPUT] Response length: {len(response_text)} | Citations: {len(citations)} | Emotion: {detected_emotion} | Confidence: {explainable_response.confidence_score if body.include_explainability else 'N/A'}")
+        logger.info(f"[RAG QUERY OUTPUT] Response length: {len(response_text)} | Citations: {len(citations)} | Emotion: {detected_emotion} | Ticket: {ticket_created['ticket_number'] if ticket_created else 'None'} | Confidence: {explainable_response.confidence_score if body.include_explainability else 'N/A'}")
         
         return JSONResponse(response_data)
     except Exception as exc:
