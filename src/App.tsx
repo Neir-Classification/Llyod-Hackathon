@@ -19,7 +19,7 @@ interface ChatMessage {
 const DEMO_PROMPTS = [
   "My house got burned down in a recent forest fire what can I do to claim insurance",
   "I'm in urgent need of money and I want you to help me with right away",
-  "I need more money it's not enough I need atleast 10,00,000 euros",
+  "I need more money it's not enough I need atleast then thousand euros",
   "I want to talk to a human"
 ];
 
