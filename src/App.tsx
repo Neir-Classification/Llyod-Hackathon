@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import Iridescence from './components/Iridescence';
 import { useAudioLevel } from './hooks/useAudioLevel';
 
@@ -38,6 +38,46 @@ export default function App() {
   const [animationState, setAnimationState] = useState<'idle' | 'listening' | 'thinking' | 'responding'>('idle');
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const vadFrameRef = useState<{ id: number | null }>({ id: null })[0];
+  
+  // Dual-pipeline state
+  const [quickResponsePlaying, setQuickResponsePlaying] = useState(false);
+  const [fullResponseReady, setFullResponseReady] = useState(false);
+  const pendingFullAudioRef = useState<{ audio: HTMLAudioElement | null, text: string, citations: Citation[] }>({ audio: null, text: '', citations: [] })[0];
+  
+  // Audio playback tracking - prevents overlapping audio
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Stop any currently playing audio
+  const stopCurrentAudio = () => {
+    if (currentAudioRef.current) {
+      console.log('🔇 Stopping current audio');
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      // Revoke the object URL if it exists
+      if (currentAudioRef.current.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentAudioRef.current.src);
+      }
+      currentAudioRef.current = null;
+    }
+  };
+  
+  // Play audio and track it
+  const playAudio = async (audio: HTMLAudioElement): Promise<void> => {
+    // Stop any currently playing audio first
+    stopCurrentAudio();
+    
+    // Track this audio
+    currentAudioRef.current = audio;
+    
+    try {
+      await audio.play();
+      console.log('▶️ Audio playing');
+    } catch (err) {
+      console.error('❌ Audio play failed:', err);
+      currentAudioRef.current = null;
+      throw err;
+    }
+  };
 
   // Smooth level animation
   useEffect(() => {
@@ -363,122 +403,298 @@ export default function App() {
     }
   };
 
-  // Send query to backend with conversation history
+  // Send query to backend with dual-pipeline (quick + full response)
   const sendQuery = async (query: string) => {
     if (!query.trim()) return;
 
+    // Stop any currently playing audio before starting new query
+    stopCurrentAudio();
+    
     setIsProcessing(true);
-    setStatusText('Sending query...');
+    setStatusText('Processing...');
 
     try {
       // Prepare conversation history BEFORE adding new message
-      // This sends the history WITHOUT the current query (backend uses it as context)
       const conversationHistory = chatMessages.map(msg => ({
         role: msg.role,
         content: msg.text
       }));
 
-      console.log('📤 Sending query with history:', conversationHistory.length, 'messages');
-      console.log('📝 History:', conversationHistory);
+      console.log('📤 [DUAL-PIPELINE] Sending query:', query);
 
-      const ragRes = await fetch('/rag-query', {
+      // Step 1: Get quick response audio immediately
+      const quickFormData = new FormData();
+      quickFormData.append('query', query);
+      quickFormData.append('tone', 'neutral');
+      quickFormData.append('voice', 'alloy');
+
+      const quickRes = await fetch('/quick-response-audio', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          query, 
-          tone: 'neutral', 
-          k: 2,
-          conversation_history: conversationHistory
-        })
+        body: quickFormData,
       });
 
-      if (!ragRes.ok) throw new Error('RAG query failed');
-      const ragData = await ragRes.json();
-      const responseText = ragData.response;
-      const citations = ragData.citations || [];
-
-      setResponse(responseText);
-      setCurrentCitations(citations);
-      
-      // NOW add both user message and assistant response to chat (with citations)
-      setChatMessages(prev => [
-        ...prev, 
-        { text: query, role: 'user' },
-        { text: responseText, role: 'assistant', citations: citations }
-      ]);
-
-      // Show subtitle
-      setSubtitle(responseText);
-      setShowSubtitle(true);
-
-      // Generate and play speech
-      setStatusText('Generating response...');
-      console.log('🔊 Requesting TTS for:', responseText);
-      
-      const ttsRes = await fetch('/text-to-speech', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: responseText, voice: 'alloy', audio_format: 'mp3' })
-      });
-
-      if (!ttsRes.ok) {
-        const errorText = await ttsRes.text();
-        console.error('TTS failed:', ttsRes.status, errorText);
-        throw new Error(`TTS failed: ${ttsRes.status}`);
-      }
-      
-      console.log('✅ TTS response received');
-      const audioBlob = await ttsRes.blob();
-      console.log('📦 Audio blob size:', audioBlob.size, 'bytes');
-      
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      
-      // Set volume to ensure it's audible
-      audio.volume = 1.0;
-
-      setAnimationState('responding');
-      
-      audio.addEventListener('ended', async () => {
-        console.log('🎵 Audio playback ended - returning to listening mode');
-        setShowSubtitle(false);
-        setAnimationState('idle');
-        setTranscript('Waiting for input...');
-        setResponse('Processing...');
-        setIsProcessing(false);
-        URL.revokeObjectURL(audioUrl);
+      if (quickRes.ok) {
+        // Play quick response immediately
+        const quickBlob = await quickRes.blob();
+        const quickUrl = URL.createObjectURL(quickBlob);
+        const quickAudio = new Audio(quickUrl);
+        quickAudio.volume = 1.0;
         
-        // Automatically start listening again after a brief pause
-        setTimeout(async () => {
-          console.log('🔄 Auto-starting next recording...');
-          await startRecording();
-        }, 500);
-      });
-
-      audio.addEventListener('error', (e) => {
-        console.error('❌ Audio playback error:', e);
-        setStatusText('Audio error - Click to retry');
-        setIsProcessing(false);
-        setAnimationState('idle');
-        URL.revokeObjectURL(audioUrl);
-      });
-
-      setStatusText('Speaking...');
-      console.log('▶️ Playing audio...');
-      
-      try {
-        await audio.play();
-        console.log('✅ Audio playing successfully');
-      } catch (playErr) {
-        console.error('❌ Play failed:', playErr);
-        setStatusText('Audio play failed - check browser permissions');
-        setIsProcessing(false);
-        setAnimationState('idle');
+        const quickText = quickRes.headers.get('X-Quick-Response-Text') || 'Processing...';
+        setSubtitle(quickText);
+        setShowSubtitle(true);
+        setAnimationState('responding');
+        setStatusText('Acknowledging...');
+        setQuickResponsePlaying(true);
+        
+        console.log('🎵 [QUICK] Playing quick response:', quickText);
+        
+        // Start fetching full response in parallel
+        const fullResponsePromise = (async () => {
+          const fullRes = await fetch('/rag-query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              query, 
+              tone: 'neutral', 
+              k: 2,
+              conversation_history: conversationHistory
+            })
+          });
+          
+          if (!fullRes.ok) throw new Error('RAG query failed');
+          const ragData = await fullRes.json();
+          
+          // Generate TTS for full response
+          const ttsRes = await fetch('/text-to-speech', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: ragData.response, voice: 'alloy', audio_format: 'mp3' })
+          });
+          
+          if (!ttsRes.ok) throw new Error('TTS failed');
+          const audioBlob = await ttsRes.blob();
+          
+          return { response: ragData.response, citations: ragData.citations || [], audioBlob };
+        })();
+        
+        // Set up quick audio end handler
+        quickAudio.addEventListener('ended', async () => {
+          console.log('🎵 [QUICK] Quick response ended, transitioning to full response');
+          URL.revokeObjectURL(quickUrl);
+          setQuickResponsePlaying(false);
+          currentAudioRef.current = null; // Clear ref since audio ended
+          
+          // Wait for full response if not ready yet
+          try {
+            const { response: fullText, citations, audioBlob } = await fullResponsePromise;
+            
+            setResponse(fullText);
+            setCurrentCitations(citations);
+            setChatMessages(prev => [
+              ...prev, 
+              { text: query, role: 'user' },
+              { text: fullText, role: 'assistant', citations }
+            ]);
+            
+            // Update subtitle and play full audio
+            setSubtitle(fullText);
+            const fullUrl = URL.createObjectURL(audioBlob);
+            const fullAudio = new Audio(fullUrl);
+            fullAudio.volume = 1.0;
+            
+            setStatusText('Speaking...');
+            console.log('🎵 [FULL] Playing full response:', fullText.substring(0, 50) + '...');
+            
+            fullAudio.addEventListener('ended', async () => {
+              console.log('🎵 [FULL] Full response ended');
+              setShowSubtitle(false);
+              setAnimationState('idle');
+              setTranscript('Waiting for input...');
+              setResponse('Processing...');
+              setIsProcessing(false);
+              URL.revokeObjectURL(fullUrl);
+              currentAudioRef.current = null; // Clear ref since audio ended
+              
+              // Auto-restart listening
+              setTimeout(async () => {
+                console.log('🔄 Auto-starting next recording...');
+                await startRecording();
+              }, 500);
+            });
+            
+            fullAudio.addEventListener('error', (e) => {
+              console.error('❌ Full audio playback error:', e);
+              setStatusText('Audio error - Click to retry');
+              setIsProcessing(false);
+              setAnimationState('idle');
+              URL.revokeObjectURL(fullUrl);
+              currentAudioRef.current = null;
+            });
+            
+            await playAudio(fullAudio);
+            
+          } catch (err: any) {
+            console.error('❌ Full response failed:', err);
+            setStatusText('Error getting full response');
+            setIsProcessing(false);
+            setAnimationState('idle');
+          }
+        });
+        
+        quickAudio.addEventListener('error', async (e) => {
+          console.error('❌ Quick audio error:', e);
+          URL.revokeObjectURL(quickUrl);
+          setQuickResponsePlaying(false);
+          currentAudioRef.current = null;
+          
+          // Fall back to waiting for full response
+          try {
+            const { response: fullText, citations, audioBlob } = await fullResponsePromise;
+            setResponse(fullText);
+            setCurrentCitations(citations);
+            setChatMessages(prev => [
+              ...prev, 
+              { text: query, role: 'user' },
+              { text: fullText, role: 'assistant', citations }
+            ]);
+            
+            // Play full audio directly
+            setSubtitle(fullText);
+            setShowSubtitle(true);
+            const fullUrl = URL.createObjectURL(audioBlob);
+            const fullAudio = new Audio(fullUrl);
+            fullAudio.volume = 1.0;
+            
+            fullAudio.addEventListener('ended', async () => {
+              setShowSubtitle(false);
+              setAnimationState('idle');
+              setTranscript('Waiting for input...');
+              setResponse('Processing...');
+              setIsProcessing(false);
+              URL.revokeObjectURL(fullUrl);
+              currentAudioRef.current = null;
+              setTimeout(() => startRecording(), 500);
+            });
+            
+            await playAudio(fullAudio);
+          } catch (err) {
+            console.error('❌ Fallback also failed:', err);
+            setStatusText('Error. Try again.');
+            setIsProcessing(false);
+            setAnimationState('idle');
+          }
+        });
+        
+        // Play quick audio
+        await playAudio(quickAudio);
+        
+      } else {
+        // Fallback to original single-pipeline if quick response fails
+        console.warn('⚠️ Quick response failed, falling back to single pipeline');
+        await sendQuerySinglePipeline(query, conversationHistory);
       }
+      
     } catch (err: any) {
-      console.error('Error sending query:', err);
+      console.error('Error in dual pipeline:', err);
       setStatusText('Error. Try again.');
       setResponse(`Error: ${err.message}`);
+      setIsProcessing(false);
+      setAnimationState('idle');
+    }
+  };
+
+  // Fallback single-pipeline query (original implementation)
+  const sendQuerySinglePipeline = async (query: string, conversationHistory: any[]) => {
+    console.log('📤 [SINGLE] Sending query with history:', conversationHistory.length, 'messages');
+
+    const ragRes = await fetch('/rag-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        query, 
+        tone: 'neutral', 
+        k: 2,
+        conversation_history: conversationHistory
+      })
+    });
+
+    if (!ragRes.ok) throw new Error('RAG query failed');
+    const ragData = await ragRes.json();
+    const responseText = ragData.response;
+    const citations = ragData.citations || [];
+
+    setResponse(responseText);
+    setCurrentCitations(citations);
+    
+    setChatMessages(prev => [
+      ...prev, 
+      { text: query, role: 'user' },
+      { text: responseText, role: 'assistant', citations: citations }
+    ]);
+
+    setSubtitle(responseText);
+    setShowSubtitle(true);
+
+    setStatusText('Generating response...');
+    console.log('🔊 Requesting TTS for:', responseText);
+    
+    const ttsRes = await fetch('/text-to-speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: responseText, voice: 'alloy', audio_format: 'mp3' })
+    });
+
+    if (!ttsRes.ok) {
+      const errorText = await ttsRes.text();
+      console.error('TTS failed:', ttsRes.status, errorText);
+      throw new Error(`TTS failed: ${ttsRes.status}`);
+    }
+    
+    console.log('✅ TTS response received');
+    const audioBlob = await ttsRes.blob();
+    console.log('📦 Audio blob size:', audioBlob.size, 'bytes');
+    
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    audio.volume = 1.0;
+
+    setAnimationState('responding');
+    
+    audio.addEventListener('ended', async () => {
+      console.log('🎵 Audio playback ended - returning to listening mode');
+      setShowSubtitle(false);
+      setAnimationState('idle');
+      setTranscript('Waiting for input...');
+      setResponse('Processing...');
+      setIsProcessing(false);
+      URL.revokeObjectURL(audioUrl);
+      currentAudioRef.current = null;
+      
+      setTimeout(async () => {
+        console.log('🔄 Auto-starting next recording...');
+        await startRecording();
+      }, 500);
+    });
+
+    audio.addEventListener('error', (e) => {
+      console.error('❌ Audio playback error:', e);
+      setStatusText('Audio error - Click to retry');
+      setIsProcessing(false);
+      setAnimationState('idle');
+      URL.revokeObjectURL(audioUrl);
+      currentAudioRef.current = null;
+    });
+
+    setStatusText('Speaking...');
+    console.log('▶️ Playing audio...');
+    
+    try {
+      await playAudio(audio);
+      console.log('✅ Audio playing successfully');
+    } catch (playErr) {
+      console.error('❌ Play failed:', playErr);
+      setStatusText('Audio play failed - check browser permissions');
       setIsProcessing(false);
       setAnimationState('idle');
     }
@@ -593,6 +809,14 @@ export default function App() {
         <p className="text-lg text-gray-400 mb-2 animate-fade-in font-light tracking-wide">
           {isRecording ? 'Listening... (speak naturally, will auto-stop)' : statusText}
         </p>
+        
+        {/* Dual Pipeline Indicator */}
+        {quickResponsePlaying && (
+          <div className="flex items-center gap-2 mb-2 animate-fade-in">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            <span className="text-xs text-green-400/80 font-light">Quick response • Full answer loading...</span>
+          </div>
+        )}
         
         {/* Conversation Context Indicator */}
         {chatMessages.length > 0 && (
