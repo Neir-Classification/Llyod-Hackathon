@@ -1105,7 +1105,7 @@ export default function App() {
                     </div>
                     <div className="flex items-start gap-3">
                       <div className="w-1 h-1 rounded-full bg-white/40 mt-2 flex-shrink-0" />
-                      <span className="text-white/80 font-light">Requesting €10,00,000 coverage</span>
+                      <span className="text-white/80 font-light">Requesting €10,000 coverage</span>
                     </div>
                   </div>
                 </div>
