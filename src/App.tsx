@@ -2,9 +2,17 @@ import { useEffect, useState, useMemo } from 'react';
 import Iridescence from './components/Iridescence';
 import { useAudioLevel } from './hooks/useAudioLevel';
 
+interface Citation {
+  policy_name: string;
+  page_number: number | string;
+  content: string;
+  score?: number;
+}
+
 interface ChatMessage {
   text: string;
   role: 'user' | 'assistant';
+  citations?: Citation[];
 }
 
 export default function App() {
@@ -22,6 +30,8 @@ export default function App() {
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [currentCitations, setCurrentCitations] = useState<Citation[]>([]);
+  const [showCitations, setShowCitations] = useState(false);
   
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
@@ -385,14 +395,16 @@ export default function App() {
       if (!ragRes.ok) throw new Error('RAG query failed');
       const ragData = await ragRes.json();
       const responseText = ragData.response;
+      const citations = ragData.citations || [];
 
       setResponse(responseText);
+      setCurrentCitations(citations);
       
-      // NOW add both user message and assistant response to chat
+      // NOW add both user message and assistant response to chat (with citations)
       setChatMessages(prev => [
         ...prev, 
         { text: query, role: 'user' },
-        { text: responseText, role: 'assistant' }
+        { text: responseText, role: 'assistant', citations: citations }
       ]);
 
       // Show subtitle
@@ -501,7 +513,9 @@ export default function App() {
 
       if (!res.ok) throw new Error('Query failed');
       const data = await res.json();
-      setChatMessages(prev => [...prev, { text: data.response, role: 'assistant' }]);
+      const citations = data.citations || [];
+      setCurrentCitations(citations);
+      setChatMessages(prev => [...prev, { text: data.response, role: 'assistant', citations: citations }]);
     } catch (err: any) {
       setChatMessages(prev => [...prev, { text: `Error: ${err.message}`, role: 'assistant' }]);
     }
@@ -592,7 +606,20 @@ export default function App() {
       </main>
 
       {/* Transcript Display - Always reserve space, fade in content */}
-      <div className="fixed top-8 right-8 w-96 h-[280px] bg-black/80 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-2xl transition-opacity duration-300">
+      <div className="fixed top-8 right-8 w-96 bg-black/80 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-2xl transition-opacity duration-300">
+        {/* Citations Button */}
+        {currentCitations.length > 0 && (
+          <button
+            onClick={() => setShowCitations(true)}
+            className="w-full mb-4 px-4 py-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl flex items-center justify-center gap-2 transition-all text-xs text-purple-300"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            View {currentCitations.length} Source{currentCitations.length !== 1 ? 's' : ''}
+          </button>
+        )}
+        
         <div className="mb-5">
           <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">
             Transcript
@@ -642,12 +669,28 @@ export default function App() {
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
               {chatMessages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                  <div className={`max-w-[75%] px-5 py-3 rounded-2xl text-[14px] leading-relaxed font-light ${
-                    msg.role === 'user' 
-                      ? 'bg-white text-black rounded-tr-sm' 
-                      : 'bg-white/10 text-gray-100 rounded-tl-sm'
-                  }`}>
-                    {msg.text}
+                  <div className="flex flex-col gap-2 max-w-[75%]">
+                    <div className={`px-5 py-3 rounded-2xl text-[14px] leading-relaxed font-light ${
+                      msg.role === 'user' 
+                        ? 'bg-white text-black rounded-tr-sm' 
+                        : 'bg-white/10 text-gray-100 rounded-tl-sm'
+                    }`}>
+                      {msg.text}
+                    </div>
+                    {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setCurrentCitations(msg.citations || []);
+                          setShowCitations(true);
+                        }}
+                        className="self-start text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 transition-colors"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        View {msg.citations.length} source{msg.citations.length !== 1 ? 's' : ''}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -679,10 +722,86 @@ export default function App() {
         </div>
       )}
 
+      {/* Citations Panel */}
+      {showCitations && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-end z-50 animate-fade-in" onClick={() => setShowCitations(false)}>
+          <div 
+            className="w-full max-w-md h-full bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col animate-slide-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Citations Header */}
+            <div className="flex justify-between items-center px-6 py-5 border-b border-white/10">
+              <div>
+                <h2 className="text-xl font-light tracking-tight">Source Citations</h2>
+                <p className="text-xs text-gray-400 mt-1">Retrieved from policy documents</p>
+              </div>
+              <button
+                onClick={() => setShowCitations(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-xl font-light"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Citations List */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+              {currentCitations.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">
+                  <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm">No citations available</p>
+                </div>
+              ) : (
+                currentCitations.map((citation, idx) => (
+                  <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3 animate-fade-in">
+                    {/* Citation Header */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="text-sm font-medium text-gray-200">{citation.policy_name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-400">
+                          <span>Page {citation.page_number}</span>
+                          {citation.score !== undefined && (
+                            <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-full">
+                              {(1 / (1 + citation.score) * 100).toFixed(0)}% match
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-500 font-mono">#{idx + 1}</span>
+                    </div>
+
+                    {/* Citation Content */}
+                    <div className="text-xs text-gray-300 leading-relaxed bg-black/30 rounded-lg p-3 border border-white/5">
+                      {citation.content}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Citations Footer */}
+            <div className="px-6 py-4 border-t border-white/10 text-xs text-gray-400 text-center">
+              Powered by FAISS vector similarity search
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes fade-in {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes slide-left {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
         }
         @keyframes slide-up {
           from { opacity: 0; transform: translateY(100%); }
@@ -693,6 +812,9 @@ export default function App() {
         }
         .animate-slide-up {
           animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .animate-slide-left {
+          animation: slide-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
       `}</style>
     </div>

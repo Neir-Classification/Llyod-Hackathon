@@ -195,15 +195,15 @@ def build_vector_store():
 
 
 def retrieve(query: str, vector_db: FAISS, k: int = 3):
-    """Retrieve relevant chunks from the vector store (ChatGPT-structured)."""
-    # Use direct semantic search on ChatGPT-structured content
-    docs = vector_db.max_marginal_relevance_search(query, k=k, fetch_k=25)
+    """Retrieve relevant chunks from the vector store (ChatGPT-structured) with scores."""
+    # Use similarity search with scores for citations
+    results = vector_db.similarity_search_with_score(query, k=k)
     
-    # Don't truncate Gemini-structured content as aggressively
-    for doc in docs:
+    # Don't truncate ChatGPT-structured content as aggressively
+    for doc, score in results:
         doc.page_content = doc.page_content[:1000]
     
-    return [(doc, 0.0) for doc in docs]
+    return results
 
 
 def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral", conversation_history: list = None) -> str:
@@ -470,12 +470,23 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         # Generate tone-adjusted response with conversation context
         response_text = adjust_tone_with_llm(results, body.query, body.tone, history)
         
-        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}'")
+        # Format citations from retrieved documents
+        citations = []
+        for doc, score in results:
+            citations.append({
+                "policy_name": doc.metadata.get("policy_name", "unknown"),
+                "page_number": doc.metadata.get("page_number", "N/A"),
+                "content": doc.page_content[:300],  # Preview for citation
+                "score": float(score)
+            })
+        
+        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}' | Citations: {len(citations)}")
         
         return JSONResponse({
             "response": response_text,
             "tone": body.tone,
-            "query": body.query
+            "query": body.query,
+            "citations": citations
         })
     except Exception as exc:
         logger.exception("RAG query failed")
