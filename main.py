@@ -5,11 +5,18 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from openai import OpenAI
 from pydantic import BaseModel
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+
+# Database imports
+from database import get_db, User, Policy, Ticket, CallSummary
 
 # RAG imports
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -37,15 +44,128 @@ PDF_PATHS = [DATASET_DIR / "policy-booklet.pdf", DATASET_DIR / "policy-limits.pd
 FAISS_DIR = PRAJAS_NIER_DIR / "artifacts" / "faiss_index"
 
 TONE_PROMPTS = {
-    "angry": "You are a calm, empathetic customer service agent. Acknowledge the user's frustration briefly and provide clear information. Avoid defensive or technical language. Keep it short and reassuring.",
-    "confused": "You are a patient and reassuring assistant. Explain the policy information simply and clearly. Avoid jargon. Use everyday language.",
-    "neutral": "You are a professional insurance assistant. Provide clear, factual information about the policy. Be direct and concise.",
-    "happy": "You are a warm and friendly insurance assistant. Provide the policy information in a positive, helpful manner. Keep it professional but personable.",
-    "anxious": "You are a reassuring and supportive assistant. Provide clear information and emphasize what's covered and next steps. Be comforting and specific."
+    "angry": "You are a deeply empathetic insurance assistant. The user is frustrated - acknowledge their feelings with genuine understanding. Use phrases like 'I completely understand your frustration' or 'That must be really difficult.' Stay calm, validate their concerns, then provide clear, helpful information. Show you're on their side.",
+    "confused": "You are a patient, understanding insurance assistant. The user is confused - be extra clear and supportive. Break down complex information into simple steps. Use analogies if helpful. Reassure them that insurance can be confusing and you're here to help them understand.",
+    "neutral": "You are a professional yet approachable insurance assistant. Provide clear, factual information while maintaining a warm, conversational tone. Be helpful and thorough without being overly formal.",
+    "happy": "You are a warm, friendly insurance assistant. Match the user's positive energy! Provide information in an upbeat, encouraging way. Celebrate their questions and make them feel confident about their coverage.",
+    "anxious": "You are a deeply compassionate and reassuring insurance assistant. The user is worried - provide extra comfort and certainty. Use calming language like 'Don't worry,' 'You're covered for this,' 'Let me help put your mind at ease.' Emphasize protections and support available to them.",
+    "distressed": "You are an extremely empathetic and supportive insurance assistant. The user may be going through a difficult situation. Show deep compassion with phrases like 'I'm so sorry you're dealing with this.' Be gentle, patient, and focus on how the policy can help them. Prioritize emotional support alongside information.",
+    "urgent": "You are a responsive and efficient insurance assistant. The user needs help quickly. Be direct and action-oriented while still showing you care. Prioritize the most important information first and guide them on next steps."
 }
 
 # Global vector store (cached)
 _vector_store = None
+
+# JWT Configuration
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+
+security = HTTPBearer()
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Create JWT access token."""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
+    """Get current user from JWT token."""
+    token = credentials.credentials
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
+            logger.error("JWT payload missing 'sub' field")
+            raise credentials_exception
+        user_id = int(user_id_str)
+    except JWTError as e:
+        logger.error(f"JWT decode error: {e}")
+        raise credentials_exception
+    except Exception as e:
+        logger.error(f"Unexpected error in get_current_user: {e}")
+        raise credentials_exception
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        logger.error(f"User not found for id: {user_id}")
+        raise credentials_exception
+    if not user.is_active:
+        logger.error(f"User {user_id} is not active")
+        raise credentials_exception
+    return user
+
+
+def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Get current user if authenticated, otherwise None."""
+    if credentials is None:
+        return None
+    try:
+        return get_current_user(credentials, db)
+    except HTTPException:
+        return None
+
+
+def detect_empathy_and_tone(user_query: str, conversation_history: list = None) -> str:
+    """Detect the emotional tone and empathy needs from user's query using LLM."""
+    try:
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+        
+        history_context = ""
+        if conversation_history:
+            history_context = "\n\nConversation context:\n"
+            for msg in conversation_history[-3:]:  # Last 3 messages for context
+                role = "User" if msg.get("role") == "user" else "Assistant"
+                history_context += f"{role}: {msg.get('content', '')}\n"
+        
+        prompt = f"""Analyze the emotional tone and empathy needs of this user's message. Consider both the content and any conversation history.
+
+User message: "{user_query}"{history_context}
+
+Classify into ONE of these categories:
+- "distressed": User is going through a difficult situation (accident, loss, emergency, personal crisis, grief)
+- "anxious": User is worried, stressed, or uncertain about coverage or situations
+- "angry": User is frustrated, upset, or expressing dissatisfaction
+- "confused": User is unclear, asking for clarification, or finding things complicated
+- "urgent": User needs immediate help or has time-sensitive concerns
+- "happy": User is satisfied, positive, or expressing gratitude
+- "neutral": Standard informational question, no strong emotional content
+
+IMPORTANT: Be sensitive to context. Even simple questions might hide deeper concerns if they relate to accidents, health issues, losses, or stressful life events.
+
+Respond with ONLY ONE WORD - the category name."""
+        
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        detected_tone = response.content.strip().lower()
+        
+        # Validate tone is in our supported list
+        valid_tones = ["distressed", "anxious", "angry", "confused", "urgent", "happy", "neutral"]
+        if detected_tone not in valid_tones:
+            logger.warning(f"Detected tone '{detected_tone}' not in valid list, defaulting to neutral")
+            detected_tone = "neutral"
+        
+        logger.info(f"[EMPATHY] Detected tone: {detected_tone} for query: '{user_query[:50]}...'")
+        return detected_tone
+        
+    except Exception as e:
+        logger.error(f"[EMPATHY] Failed to detect tone: {e}")
+        return "neutral"
 
 
 def get_vector_store():
@@ -206,8 +326,14 @@ def retrieve(query: str, vector_db: FAISS, k: int = 3):
     return results
 
 
-def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral", conversation_history: list = None) -> str:
+def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral", conversation_history: list = None, auto_detect_tone: bool = False) -> str:
     """Use LLM to generate a tone-appropriate response from retrieved chunks with conversation context."""
+    # Auto-detect empathetic tone if requested
+    if auto_detect_tone:
+        detected_tone = detect_empathy_and_tone(user_question, conversation_history)
+        logger.info(f"[EMPATHY] Using auto-detected tone: {detected_tone} (override: {tone} -> {detected_tone})")
+        tone = detected_tone
+    
     if tone not in TONE_PROMPTS:
         tone = "neutral"
     
@@ -227,8 +353,18 @@ def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neut
     
     system_prompt = f"""{TONE_PROMPTS[tone]}
 
-Based on the policy information below, answer the user's question in 3-4 short sentences suitable for voice (20-30 seconds of speech).
-**Instructions for Answering Insurance Questions Using the Knowledge Base:**
+EMPATHY & EMOTIONAL INTELLIGENCE:
+- ALWAYS acknowledge the user's emotional state when appropriate
+- Show genuine compassion for difficult situations (accidents, losses, health issues, financial stress)
+- Use validating phrases naturally: "That sounds stressful," "I understand your concern," "I'm here to help"
+- If the user is going through something difficult, express care BEFORE diving into policy details
+- Balance empathy with practical help - people need both emotional support AND useful information
+- Adapt your language: warm and conversational for emotional topics, clear and structured for technical questions
+- Act like a caring human, not a robotic assistant
+
+Based on the policy information below, answer the user's question in 3-4 sentences suitable for voice (20-30 seconds of speech).
+
+**Core Instructions:**
 
 1.  **Prioritize Knowledge Base Search:** Always attempt to answer the user's question by first searching the provided knowledge base.
 
@@ -325,6 +461,7 @@ class RAGQueryRequest(BaseModel):
     tone: Optional[str] = "neutral"
     k: Optional[int] = 2
     conversation_history: Optional[list[ChatMessage]] = []
+    auto_detect_empathy: Optional[bool] = True  # Auto-detect emotional tone by default
 
 
 @app.get("/health")
@@ -467,8 +604,14 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         # Convert conversation history to dict format
         history = [{"role": msg.role, "content": msg.content} for msg in (body.conversation_history or [])]
         
-        # Generate tone-adjusted response with conversation context
-        response_text = adjust_tone_with_llm(results, body.query, body.tone, history)
+        # Generate tone-adjusted response with conversation context and empathy detection
+        response_text = adjust_tone_with_llm(
+            results, 
+            body.query, 
+            body.tone, 
+            history, 
+            auto_detect_tone=body.auto_detect_empathy
+        )
         
         # Format citations from retrieved documents
         citations = []
@@ -533,7 +676,8 @@ async def rag_audio_query(
         
         vector_db = get_vector_store()
         results = retrieve(user_query, vector_db, k=k)
-        response_text = adjust_tone_with_llm(results, user_query, tone)
+        # Use empathy detection for audio queries
+        response_text = adjust_tone_with_llm(results, user_query, tone, auto_detect_tone=True)
         
         logger.info(f"[RAG-AUDIO] Generated response: '{response_text}'")
     except Exception as exc:
@@ -634,7 +778,8 @@ async def rag_audio_query_chunk(
         
         vector_db = get_vector_store()
         results = retrieve(user_query, vector_db, k=k)
-        response_text = adjust_tone_with_llm(results, user_query, tone)
+        # Use empathy detection for audio queries
+        response_text = adjust_tone_with_llm(results, user_query, tone, auto_detect_tone=True)
         
         logger.info(f"[RAG-AUDIO-CHUNK] Generated response: '{response_text}'")
     except Exception as exc:
@@ -664,5 +809,188 @@ async def rag_audio_query_chunk(
         "X-Response-Text": response_text[:200]  # Truncated for header size limits
     }
     return StreamingResponse(iter_audio(), media_type="audio/mpeg", headers=headers)
+
+
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+
+class UserRegister(BaseModel):
+    email: str
+    username: str
+    password: str
+    full_name: str
+    phone: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: dict
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    username: str
+    full_name: str
+    phone: Optional[str]
+    is_admin: bool
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+
+@app.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+def register_user(user_data: UserRegister, db: Session = Depends(get_db)):
+    """Register a new user."""
+    # Check if user already exists
+    existing_user = db.query(User).filter(
+        (User.email == user_data.email) | (User.username == user_data.username)
+    ).first()
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email or username already exists"
+        )
+    
+    # Create new user
+    new_user = User(
+        email=user_data.email,
+        username=user_data.username,
+        hashed_password=User.hash_password(user_data.password),
+        full_name=user_data.full_name,
+        phone=user_data.phone,
+        is_active=True,
+        is_admin=False
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": str(new_user.id)})
+    
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user={
+            "id": new_user.id,
+            "email": new_user.email,
+            "username": new_user.username,
+            "full_name": new_user.full_name,
+            "is_admin": new_user.is_admin
+        }
+    )
+
+
+@app.post("/login", response_model=TokenResponse)
+def login_user(credentials: UserLogin, db: Session = Depends(get_db)):
+    """Login user and return JWT token."""
+    user = db.query(User).filter(User.email == credentials.email).first()
+    
+    if not user or not user.verify_password(credentials.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive"
+        )
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": str(user.id)})
+    
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user={
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+            "is_admin": user.is_admin
+        }
+    )
+
+
+@app.get("/me", response_model=UserResponse)
+def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """Get current authenticated user info."""
+    return current_user
+
+
+@app.get("/me/policies")
+def get_user_policies(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get all policies for current user."""
+    policies = db.query(Policy).filter(Policy.user_id == current_user.id).all()
+    return {"policies": [
+        {
+            "id": p.id,
+            "policy_number": p.policy_number,
+            "policy_type": p.policy_type,
+            "status": p.status,
+            "premium_amount": p.premium_amount,
+            "coverage_amount": p.coverage_amount,
+            "deductible": p.deductible,
+            "start_date": p.start_date.isoformat() if p.start_date else None,
+            "end_date": p.end_date.isoformat() if p.end_date else None,
+            "policy_details": p.policy_details
+        }
+        for p in policies
+    ]}
+
+
+@app.get("/me/tickets")
+def get_user_tickets(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get all tickets for current user."""
+    tickets = db.query(Ticket).filter(Ticket.user_id == current_user.id).order_by(Ticket.created_at.desc()).all()
+    return {"tickets": [
+        {
+            "id": t.id,
+            "ticket_number": t.ticket_number,
+            "title": t.title,
+            "description": t.description,
+            "category": t.category,
+            "priority": t.priority,
+            "status": t.status,
+            "resolution": t.resolution,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "resolved_at": t.resolved_at.isoformat() if t.resolved_at else None
+        }
+        for t in tickets
+    ]}
+
+
+@app.get("/me/call-history")
+def get_user_call_history(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get call history for current user."""
+    calls = db.query(CallSummary).filter(CallSummary.user_id == current_user.id).order_by(CallSummary.call_date.desc()).all()
+    return {"call_history": [
+        {
+            "id": c.id,
+            "call_date": c.call_date.isoformat() if c.call_date else None,
+            "duration_seconds": c.duration_seconds,
+            "topic": c.topic,
+            "summary": c.summary,
+            "sentiment": c.sentiment,
+            "key_points": c.key_points,
+            "action_items": c.action_items,
+            "requires_followup": c.requires_followup
+        }
+        for c in calls
+    ]}
+
 
 # cd 'c:\Users\praja\Desktop\neir-classification'; python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
