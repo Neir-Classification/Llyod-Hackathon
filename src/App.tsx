@@ -7,12 +7,38 @@ interface Citation {
   page_number: number | string;
   content: string;
   score?: number;
+  section?: string;
+  relevance_score?: number;
+}
+
+interface ExplainabilityData {
+  confidence: {
+    score: number;
+    level: 'high' | 'medium' | 'low';
+    explanation: string;
+  };
+  reasoning: {
+    type: string;
+    explanation: string;
+  };
+  sources_count: number;
+  limitations: string[];
+  processing_time_ms: number;
+}
+
+interface SafetyData {
+  flags: string[];
+  warnings: string[];
+  disclaimers: string[];
+  input_sanitized: boolean;
 }
 
 interface ChatMessage {
   text: string;
   role: 'user' | 'assistant';
   citations?: Citation[];
+  explainability?: ExplainabilityData;
+  safety?: SafetyData;
 }
 
 interface User {
@@ -264,6 +290,9 @@ export default function App() {
   const [currentCitations, setCurrentCitations] = useState<Citation[]>([]);
   const [showCitations, setShowCitations] = useState(false);
   const [detectedEmotion, setDetectedEmotion] = useState<string>('neutral');
+  const [currentExplainability, setCurrentExplainability] = useState<ExplainabilityData | null>(null);
+  const [currentSafety, setCurrentSafety] = useState<SafetyData | null>(null);
+  const [showExplainability, setShowExplainability] = useState(false);
   
   // Authentication state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -664,7 +693,9 @@ export default function App() {
           query, 
           tone: 'neutral', 
           k: 2,
-          conversation_history: conversationHistory
+          conversation_history: conversationHistory,
+          include_explainability: true,
+          enable_safety_checks: true
         })
       });
 
@@ -673,16 +704,20 @@ export default function App() {
       const responseText = ragData.response;
       const citations = ragData.citations || [];
       const emotion = ragData.detected_emotion || 'neutral';
+      const explainability = ragData.explainability || null;
+      const safety = ragData.safety || null;
 
       setResponse(responseText);
       setCurrentCitations(citations);
       setDetectedEmotion(emotion);
+      setCurrentExplainability(explainability);
+      setCurrentSafety(safety);
       
-      // NOW add both user message and assistant response to chat (with citations)
+      // NOW add both user message and assistant response to chat (with citations and explainability)
       setChatMessages(prev => [
         ...prev, 
         { text: query, role: 'user' },
-        { text: responseText, role: 'assistant', citations: citations }
+        { text: responseText, role: 'assistant', citations: citations, explainability: explainability, safety: safety }
       ]);
 
       // Show subtitle
@@ -790,7 +825,9 @@ export default function App() {
           query: text, 
           tone: 'neutral', 
           k: 2,
-          conversation_history: conversationHistory
+          conversation_history: conversationHistory,
+          include_explainability: true,
+          enable_safety_checks: true
         })
       });
 
@@ -798,9 +835,13 @@ export default function App() {
       const data = await res.json();
       const citations = data.citations || [];
       const emotion = data.detected_emotion || 'neutral';
+      const explainability = data.explainability || null;
+      const safety = data.safety || null;
       setCurrentCitations(citations);
       setDetectedEmotion(emotion);
-      setChatMessages(prev => [...prev, { text: data.response, role: 'assistant', citations: citations }]);
+      setCurrentExplainability(explainability);
+      setCurrentSafety(safety);
+      setChatMessages(prev => [...prev, { text: data.response, role: 'assistant', citations: citations, explainability: explainability, safety: safety }]);
     } catch (err: any) {
       setChatMessages(prev => [...prev, { text: `Error: ${err.message}`, role: 'assistant' }]);
     }
@@ -1187,12 +1228,25 @@ export default function App() {
         {currentCitations.length > 0 && (
           <button
             onClick={() => setShowCitations(true)}
-            className="w-full mb-4 px-4 py-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl flex items-center justify-center gap-2 transition-all text-xs text-purple-300"
+            className="w-full mb-2 px-4 py-2 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl flex items-center justify-center gap-2 transition-all text-xs text-purple-300"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             View {currentCitations.length} Source{currentCitations.length !== 1 ? 's' : ''}
+          </button>
+        )}
+        
+        {/* Explainability Button */}
+        {currentExplainability && (
+          <button
+            onClick={() => setShowExplainability(true)}
+            className="w-full mb-4 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl flex items-center justify-center gap-2 transition-all text-xs text-blue-300"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            AI Explainability ({currentExplainability.confidence.level} confidence)
           </button>
         )}
         
@@ -1266,6 +1320,28 @@ export default function App() {
                         </svg>
                         View {msg.citations.length} source{msg.citations.length !== 1 ? 's' : ''}
                       </button>
+                    )}
+                    {msg.role === 'assistant' && msg.explainability && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setCurrentExplainability(msg.explainability || null);
+                            setCurrentSafety(msg.safety || null);
+                            setShowExplainability(true);
+                          }}
+                          className="self-start text-xs text-blue-400 hover:text-blue-200 flex items-center gap-1 transition-colors"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                          </svg>
+                          {msg.explainability.confidence.level} confidence
+                        </button>
+                        {msg.safety && msg.safety.flags.length > 0 && (
+                          <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded-full">
+                            ⚠️ {msg.safety.flags.length} flag{msg.safety.flags.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1342,9 +1418,12 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-400">
                           <span>Page {citation.page_number}</span>
-                          {citation.score !== undefined && (
+                          {citation.section && <span>• {citation.section}</span>}
+                          {(citation.relevance_score !== undefined || citation.score !== undefined) && (
                             <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-full">
-                              {(1 / (1 + citation.score) * 100).toFixed(0)}% match
+                              {citation.relevance_score !== undefined 
+                                ? `${(citation.relevance_score * 100).toFixed(0)}% relevance`
+                                : `${(1 / (1 + (citation.score || 0)) * 100).toFixed(0)}% match`}
                             </span>
                           )}
                         </div>
@@ -1364,6 +1443,165 @@ export default function App() {
             {/* Citations Footer */}
             <div className="px-6 py-4 border-t border-white/10 text-xs text-gray-400 text-center">
               Powered by FAISS vector similarity search
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Explainability Panel */}
+      {showExplainability && currentExplainability && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-end z-50 animate-fade-in" onClick={() => setShowExplainability(false)}>
+          <div 
+            className="w-full max-w-lg h-full bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col animate-slide-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Explainability Header */}
+            <div className="flex justify-between items-center px-6 py-5 border-b border-white/10">
+              <div>
+                <h2 className="text-xl font-light tracking-tight">AI Explainability</h2>
+                <p className="text-xs text-gray-400 mt-1">Understanding how this response was generated</p>
+              </div>
+              <button
+                onClick={() => setShowExplainability(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-xl font-light"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Explainability Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+              
+              {/* Confidence Score */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  <h3 className="text-sm font-medium text-gray-200">Confidence Level</h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-2 bg-black/30 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all ${
+                        currentExplainability.confidence.level === 'high' ? 'bg-green-500' :
+                        currentExplainability.confidence.level === 'medium' ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${currentExplainability.confidence.score * 100}%` }}
+                    />
+                  </div>
+                  <span className={`text-sm font-medium px-2 py-0.5 rounded-full ${
+                    currentExplainability.confidence.level === 'high' ? 'bg-green-500/20 text-green-300' :
+                    currentExplainability.confidence.level === 'medium' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-red-500/20 text-red-300'
+                  }`}>
+                    {(currentExplainability.confidence.score * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400">{currentExplainability.confidence.explanation}</p>
+              </div>
+
+              {/* Reasoning */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <h3 className="text-sm font-medium text-gray-200">Reasoning Type</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-medium capitalize">
+                    {currentExplainability.reasoning.type.replace('_', ' ')}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400">{currentExplainability.reasoning.explanation}</p>
+              </div>
+
+              {/* Processing Info */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <h3 className="text-sm font-medium text-gray-200">Processing Details</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-black/30 rounded-lg p-2">
+                    <span className="text-gray-500">Sources Used</span>
+                    <p className="text-gray-200 font-medium">{currentExplainability.sources_count}</p>
+                  </div>
+                  <div className="bg-black/30 rounded-lg p-2">
+                    <span className="text-gray-500">Processing Time</span>
+                    <p className="text-gray-200 font-medium">{currentExplainability.processing_time_ms.toFixed(0)}ms</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Limitations */}
+              {currentExplainability.limitations.length > 0 && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <h3 className="text-sm font-medium text-yellow-300">Limitations</h3>
+                  </div>
+                  <ul className="space-y-2">
+                    {currentExplainability.limitations.map((limitation, idx) => (
+                      <li key={idx} className="text-xs text-yellow-200/80 flex gap-2">
+                        <span className="text-yellow-500">•</span>
+                        {limitation}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Safety Flags */}
+              {currentSafety && (currentSafety.flags.length > 0 || currentSafety.warnings.length > 0) && (
+                <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    <h3 className="text-sm font-medium text-orange-300">Safety & Responsible AI</h3>
+                  </div>
+                  
+                  {currentSafety.flags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {currentSafety.flags.map((flag, idx) => (
+                        <span key={idx} className="px-2 py-1 bg-orange-500/20 text-orange-300 rounded-full text-xs capitalize">
+                          {flag.replace('_', ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {currentSafety.warnings.length > 0 && (
+                    <ul className="space-y-2">
+                      {currentSafety.warnings.map((warning, idx) => (
+                        <li key={idx} className="text-xs text-orange-200/80 flex gap-2">
+                          <span className="text-orange-500">⚠️</span>
+                          {warning}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  
+                  {currentSafety.input_sanitized && (
+                    <p className="text-xs text-green-400 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Input was sanitized for privacy protection
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Explainability Footer */}
+            <div className="px-6 py-4 border-t border-white/10 text-xs text-gray-400 text-center">
+              Transparent AI powered by explainability framework
             </div>
           </div>
         </div>

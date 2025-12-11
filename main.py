@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +26,14 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.documents import Document
+
+# Safety & Explainability imports
+from ai_safety import get_safety_guard, SafetyFlag, ContentModerator
+from explainability import (
+    get_explainability_engine, 
+    CitationFormatter,
+    ExplainableResponse
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -528,11 +537,125 @@ class RAGQueryRequest(BaseModel):
     k: Optional[int] = 2
     conversation_history: Optional[list[ChatMessage]] = []
     auto_detect_empathy: Optional[bool] = True  # Auto-detect emotional tone by default
+    include_explainability: Optional[bool] = True  # New: Include explainability metadata
+    enable_safety_checks: Optional[bool] = True    # New: Enable safety guardrails
 
 
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/ai/model-card")
+async def get_model_card() -> JSONResponse:
+    """
+    Returns the AI Model Card with transparency information about the system.
+    This endpoint provides information about the AI system's capabilities,
+    limitations, intended use, and ethical considerations.
+    """
+    model_card = {
+        "model_name": "Insurance Policy RAG Assistant",
+        "version": "1.0.0",
+        "description": "An AI-powered assistant for answering questions about insurance policies using Retrieval-Augmented Generation (RAG).",
+        
+        "intended_use": {
+            "primary_use_cases": [
+                "Answering questions about insurance policy coverage",
+                "Explaining policy terms and conditions",
+                "Providing information about claims procedures",
+                "Clarifying policy limits and exclusions"
+            ],
+            "intended_users": [
+                "Insurance policyholders",
+                "Customer service representatives",
+                "Insurance agents"
+            ],
+            "out_of_scope_uses": [
+                "Providing financial investment advice",
+                "Giving legal counsel",
+                "Making medical recommendations",
+                "Processing actual insurance claims"
+            ]
+        },
+        
+        "technical_specifications": {
+            "base_models": {
+                "language_model": "GPT-4o-mini",
+                "embedding_model": "text-embedding-3-large",
+                "speech_to_text": "Whisper-1",
+                "text_to_speech": "GPT-4o-mini-TTS"
+            },
+            "retrieval_system": {
+                "type": "FAISS Vector Store",
+                "similarity_metric": "L2 Distance",
+                "chunk_size": 2000,
+                "chunk_overlap": 200
+            }
+        },
+        
+        "performance_characteristics": {
+            "response_latency": "Typically 2-5 seconds",
+            "context_window": "Supports conversation history",
+            "retrieval_accuracy": "Dependent on query specificity and knowledge base coverage"
+        },
+        
+        "limitations": [
+            "Responses are limited to information contained in the indexed policy documents",
+            "May not have the most recent policy updates if index is not refreshed",
+            "Cannot access external systems or real-time policy data",
+            "Complex queries may receive generalized responses",
+            "Tone detection may not be 100% accurate for all emotional states"
+        ],
+        
+        "ethical_considerations": {
+            "bias_mitigation": "Responses are grounded in policy documents to minimize bias",
+            "transparency": "All responses include source citations and confidence scores",
+            "privacy": "PII detection and redaction is enabled by default",
+            "accountability": "All AI interactions are logged for audit purposes"
+        },
+        
+        "safety_measures": [
+            "Input sanitization and PII redaction",
+            "Output validation and grounding checks",
+            "Confidence scoring to flag uncertain responses",
+            "Automatic disclaimer insertion for sensitive topics",
+            "Scope validation to prevent off-topic responses"
+        ],
+        
+        "data_sources": {
+            "knowledge_base": "Insurance policy documents (PDF)",
+            "update_frequency": "On-demand index rebuild",
+            "data_retention": "Session-based, no long-term storage of queries"
+        },
+        
+        "contact": {
+            "maintainer": "Insurance AI Team",
+            "feedback_channel": "Contact support for feedback or concerns"
+        }
+    }
+    
+    return JSONResponse(model_card)
+
+
+@app.get("/ai/safety-audit")
+async def get_safety_audit() -> JSONResponse:
+    """
+    Returns the safety audit log for compliance and monitoring.
+    This endpoint provides a log of all safety checks performed.
+    """
+    safety_guard = get_safety_guard()
+    audit_log = safety_guard.get_audit_log()
+    
+    return JSONResponse({
+        "audit_log": audit_log[-100],  # Last 100 entries
+        "total_entries": len(audit_log),
+        "safety_summary": {
+            "total_checks": len(audit_log),
+            "pii_detections": sum(1 for entry in audit_log if "pii_detected" in entry.get("flags", [])),
+            "low_confidence_responses": sum(1 for entry in audit_log if "low_confidence" in entry.get("flags", [])),
+            "scope_violations": sum(1 for entry in audit_log if "out_of_scope" in entry.get("flags", []))
+        }
+    })
 
 
 @app.post("/speech-to-text")
@@ -659,17 +782,39 @@ async def rag_query(
     db: Session = Depends(get_db)
 ) -> JSONResponse:
     """Query the RAG pipeline and return a tone-adjusted response with conversation history."""
+    start_time = time.time()
+    
     try:
         if not body.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
         logger.info(f"[RAG QUERY INPUT] Query: '{body.query}' | Tone: '{body.tone}' | K: {body.k} | History: {len(body.conversation_history or [])} | User: {current_user.email if current_user else 'Guest'}")
         
+        # Initialize safety and explainability components
+        safety_guard = get_safety_guard()
+        explainability_engine = get_explainability_engine()
+        
+        # ===== SAFETY: Input Validation =====
+        safety_warnings = []
+        safety_flags = []
+        
+        if body.enable_safety_checks:
+            input_safety = safety_guard.check_input(body.query)
+            if input_safety.warnings:
+                safety_warnings.extend(input_safety.warnings)
+            if input_safety.flags:
+                safety_flags.extend([f.value for f in input_safety.flags])
+            
+            # Sanitize input (redact PII)
+            sanitized_query = safety_guard.sanitize_input(body.query)
+        else:
+            sanitized_query = body.query
+        
         # Get or build the vector store
         vector_db = get_vector_store()
         
         # Retrieve relevant chunks
-        results = retrieve(body.query, vector_db, k=body.k)
+        results = retrieve(sanitized_query, vector_db, k=body.k)
         
         # Convert conversation history to dict format
         history = [{"role": msg.role, "content": msg.content} for msg in (body.conversation_history or [])]
@@ -683,32 +828,107 @@ async def rag_query(
         # Generate tone-adjusted response with conversation context and empathy detection
         response_text, detected_emotion = adjust_tone_with_llm(
             results, 
-            body.query, 
+            sanitized_query, 
             body.tone, 
             history, 
             auto_detect_tone=body.auto_detect_empathy,
             user_context=user_context
         )
         
-        # Format citations from retrieved documents
-        citations = []
-        for doc, score in results:
-            citations.append({
-                "policy_name": doc.metadata.get("policy_name", "unknown"),
-                "page_number": doc.metadata.get("page_number", "N/A"),
-                "content": doc.page_content[:300],  # Preview for citation
-                "score": float(score)
-            })
+        # ===== SAFETY: Output Validation =====
+        disclaimers = []
+        if body.enable_safety_checks:
+            output_safety = safety_guard.check_output(response_text, sanitized_query, results)
+            if output_safety.warnings:
+                safety_warnings.extend(output_safety.warnings)
+            if output_safety.flags:
+                safety_flags.extend([f.value for f in output_safety.flags])
+            if output_safety.recommendations:
+                disclaimers.extend(output_safety.recommendations)
+            
+            # Sanitize output
+            response_text = safety_guard.sanitize_output(response_text)
+            
+            # Add disclaimers if needed
+            disclaimer_types = ContentModerator.needs_disclaimer(response_text)
+            if disclaimer_types:
+                response_text = ContentModerator.add_disclaimers(response_text, disclaimer_types)
         
-        logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}' | Citations: {len(citations)} | Emotion: {detected_emotion}")
+        # Calculate processing time
+        processing_time_ms = (time.time() - start_time) * 1000
         
-        return JSONResponse({
-            "response": response_text,
-            "tone": body.tone,
-            "query": body.query,
-            "citations": citations,
-            "detected_emotion": detected_emotion
-        })
+        # ===== EXPLAINABILITY: Generate Explainable Response =====
+        if body.include_explainability:
+            explainable_response = explainability_engine.generate_explainable_response(
+                response_text=response_text,
+                query=body.query,
+                retrieved_chunks=results,
+                model_used="gpt-4o-mini",
+                processing_time_ms=processing_time_ms,
+                safety_flags=safety_flags,
+                disclaimers=disclaimers
+            )
+            
+            # Format citations - ensure all floats are native Python floats for JSON serialization
+            citations = []
+            for source in explainable_response.sources:
+                citations.append({
+                    "policy_name": source.policy_name,
+                    "page_number": int(source.page_number) if isinstance(source.page_number, (int, float)) else source.page_number,
+                    "section": source.section,
+                    "content": source.quote,
+                    "relevance_score": float(source.relevance_score)
+                })
+            
+            response_data = {
+                "response": response_text,
+                "tone": body.tone,
+                "query": body.query,
+                "citations": citations,
+                "detected_emotion": detected_emotion,
+                "explainability": {
+                    "confidence": {
+                        "score": float(round(explainable_response.confidence_score, 3)),
+                        "level": explainable_response._confidence_level(),
+                        "explanation": explainable_response._confidence_explanation()
+                    },
+                    "reasoning": {
+                        "type": explainable_response.reasoning_type.value,
+                        "explanation": explainable_response.reasoning_explanation
+                    },
+                    "sources_count": len(citations),
+                    "limitations": explainable_response.limitations,
+                    "processing_time_ms": float(round(processing_time_ms, 2))
+                },
+                "safety": {
+                    "flags": list(set(safety_flags)),
+                    "warnings": safety_warnings,
+                    "disclaimers": disclaimers,
+                    "input_sanitized": sanitized_query != body.query
+                }
+            }
+        else:
+            # Legacy format without explainability
+            citations = []
+            for doc, score in results:
+                citations.append({
+                    "policy_name": doc.metadata.get("policy_name", "unknown"),
+                    "page_number": doc.metadata.get("page_number", "N/A"),
+                    "content": doc.page_content[:300],
+                    "score": float(score)
+                })
+            
+            response_data = {
+                "response": response_text,
+                "tone": body.tone,
+                "query": body.query,
+                "citations": citations,
+                "detected_emotion": detected_emotion
+            }
+        
+        logger.info(f"[RAG QUERY OUTPUT] Response length: {len(response_text)} | Citations: {len(citations)} | Emotion: {detected_emotion} | Confidence: {explainable_response.confidence_score if body.include_explainability else 'N/A'}")
+        
+        return JSONResponse(response_data)
     except Exception as exc:
         logger.exception("RAG query failed")
         raise HTTPException(status_code=502, detail=f"RAG query failed: {exc}") from exc
