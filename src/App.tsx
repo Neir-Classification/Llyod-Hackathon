@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Iridescence from './components/Iridescence';
-import { useAudioLevel } from './hooks/useAudioLevel';
+import { useAudioLevel, AudioMetrics } from './hooks/useAudioLevel';
 
 interface Citation {
   id: number;
@@ -11,14 +11,33 @@ interface Citation {
   relevance_rank: number;
 }
 
+interface EmpathyAnalysis {
+  detected_emotion: string;
+  confidence: number;
+  is_emergency: boolean;
+  emergency_type: string | null;
+  mode: 'emergency_triage' | 'standard';
+  signals: {
+    keyword_signals: string[];
+    acoustic_signals: string[];
+    sentiment_indicators: string[];
+  };
+}
+
+interface TTSSettings {
+  speed: number;
+  voice: string;
+}
+
 interface ChatMessage {
   text: string;
   role: 'user' | 'assistant';
   citations?: Citation[];
+  empathyAnalysis?: EmpathyAnalysis;
 }
 
 export default function App() {
-  const { levelRef, ready, error, start } = useAudioLevel();
+  const { levelRef, metricsRef, ready, error, start } = useAudioLevel();
   const [level, setLevel] = useState(0);
   const [greetingText, setGreetingText] = useState('');
   const [greetingTime, setGreetingTime] = useState('');
@@ -40,6 +59,18 @@ export default function App() {
   const [showCitations, setShowCitations] = useState(false);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
+  // Empathy Engine State
+  const [currentEmotion, setCurrentEmotion] = useState<string>('neutral');
+  const [isEmergency, setIsEmergency] = useState(false);
+  const [emergencyType, setEmergencyType] = useState<string | null>(null);
+  const [empathyMode, setEmpathyMode] = useState<'standard' | 'emergency_triage'>('standard');
+  const [empathyConfidence, setEmpathyConfidence] = useState(0);
+  const [ttsSettings, setTtsSettings] = useState<TTSSettings>({ speed: 1.0, voice: 'alloy' });
+  const [showEmpathyDetails, setShowEmpathyDetails] = useState(false);
+  
+  // Track audio metrics during recording
+  const recordingMetricsRef = useRef<AudioMetrics[]>([]);
+
   // Smooth level animation
   useEffect(() => {
     let raf = 0;
@@ -51,21 +82,43 @@ export default function App() {
     return () => cancelAnimationFrame(raf);
   }, [levelRef]);
 
-  // Calculate orb properties based on animation state
-  const orbColor: [number, number, number] = 
-    animationState === 'listening' ? [0.3, 0.5, 1.0] : // Blue when listening
-    [0.8, 0.4, 0.9]; // Purple for idle/thinking/responding
+  // Calculate orb properties based on animation state AND detected emotion
+  const getEmotionColor = (): [number, number, number] => {
+    if (animationState === 'listening') return [0.3, 0.5, 1.0]; // Blue when listening
+    
+    // Emotion-based colors for thinking/responding
+    switch (currentEmotion) {
+      case 'panicked':
+        return [0.2, 0.8, 0.6]; // Calming teal/green
+      case 'angry':
+        return [0.4, 0.6, 0.9]; // Cool blue
+      case 'anxious':
+        return [0.5, 0.7, 0.8]; // Soft cyan
+      case 'confused':
+        return [0.6, 0.5, 0.9]; // Gentle purple
+      case 'happy':
+        return [0.9, 0.6, 0.3]; // Warm orange
+      case 'distressed':
+        return [0.3, 0.7, 0.7]; // Soothing teal
+      default:
+        return [0.8, 0.4, 0.9]; // Default purple
+    }
+  };
+
+  const orbColor: [number, number, number] = getEmotionColor();
   
   const amplitude = 
     animationState === 'idle' ? 0.15 :
     animationState === 'listening' ? 0.18 + level * 1.7 : // Audio-reactive
     animationState === 'thinking' ? 0.3 : // Pulsing
+    isEmergency ? 0.2 : // Calmer for emergency
     0.25; // Steady
   
   const speed = 
     animationState === 'idle' ? 0.5 :
     animationState === 'listening' ? 0.75 + level * 0.5 : // Audio-reactive
     animationState === 'thinking' ? 1.5 : // Fast pulsing
+    isEmergency ? 0.4 : // Slower, calmer for emergency
     0.8; // Medium
   
   const scale = 
@@ -101,6 +154,9 @@ export default function App() {
   // Start recording with silence detection
   const startRecording = async () => {
     console.log('startRecording called, ready:', ready, 'isRecording:', isRecording);
+    
+    // Reset empathy state for new recording
+    recordingMetricsRef.current = [];
     
     try {
       // Enable audio context if not ready (user gesture requirement)
@@ -150,8 +206,12 @@ export default function App() {
         setMediaRecorder(null);
         setAudioContext(null);
         
-        // Process full audio immediately
-        await processVoiceInput(allChunks, mimeType || 'audio/webm');
+        // Calculate average audio metrics from recording session
+        const avgMetrics = calculateAverageMetrics();
+        console.log('📊 Recording metrics:', avgMetrics);
+        
+        // Process full audio immediately with metrics
+        await processVoiceInput(allChunks, mimeType || 'audio/webm', avgMetrics);
       };
 
       // Start recording without timeslice for faster processing
@@ -198,6 +258,11 @@ export default function App() {
 
         const rms = calculateRMS();
         const level = rms * 100; // Scale to 0-100
+        
+        // Capture metrics from the hook for empathy analysis
+        if (metricsRef.current) {
+          recordingMetricsRef.current.push({ ...metricsRef.current });
+        }
         
         // Calibrate noise floor in first second
         if (calibrationSamples < CALIBRATION_FRAMES) {
@@ -261,6 +326,28 @@ export default function App() {
     }
   };
 
+  // Calculate average metrics from recording session for empathy analysis
+  const calculateAverageMetrics = () => {
+    const metrics = recordingMetricsRef.current;
+    if (metrics.length === 0) {
+      return { speechRate: 120, pitchVariance: 0.3, volumeLevel: 0.5 };
+    }
+    
+    // Filter to only speaking moments
+    const speakingMetrics = metrics.filter(m => m.isSpeaking);
+    const toAverage = speakingMetrics.length > 5 ? speakingMetrics : metrics;
+    
+    const avgSpeechRate = toAverage.reduce((sum, m) => sum + m.speechRate, 0) / toAverage.length;
+    const avgPitchVariance = toAverage.reduce((sum, m) => sum + m.pitchVariance, 0) / toAverage.length;
+    const avgLevel = toAverage.reduce((sum, m) => sum + m.level, 0) / toAverage.length;
+    
+    return {
+      speechRate: Math.round(avgSpeechRate),
+      pitchVariance: Number(avgPitchVariance.toFixed(3)),
+      volumeLevel: Number(avgLevel.toFixed(3))
+    };
+  };
+
   // Stop recording
   const stopRecording = () => {
     console.log('stopRecording called, mediaRecorder:', mediaRecorder, 'isRecording:', isRecording);
@@ -272,13 +359,17 @@ export default function App() {
     }
   };
 
-  // Process voice input
-  const processVoiceInput = async (chunks: Blob[], mimeType: string) => {
+  // Process voice input with Empathy Engine
+  const processVoiceInput = async (
+    chunks: Blob[], 
+    mimeType: string, 
+    audioMetrics?: { speechRate: number; pitchVariance: number; volumeLevel: number }
+  ) => {
     if (chunks.length === 0) return;
 
     setIsProcessing(true);
     setAnimationState('thinking');
-    setStatusText('Processing...');
+    setStatusText('Analyzing...');
 
     try {
       const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
@@ -305,8 +396,8 @@ export default function App() {
         return;
       }
 
-      // Get RAG response
-      await sendQuery(query);
+      // Get Empathy-powered RAG response with audio metrics
+      await sendQueryWithEmpathy(query, audioMetrics);
     } catch (err: any) {
       console.error('Error processing voice input:', err);
       setStatusText('Error. Try again.');
@@ -316,52 +407,87 @@ export default function App() {
     }
   };
 
-  // Send query to backend
-  const sendQuery = async (query: string) => {
+  // Send query with Empathy Engine analysis
+  const sendQueryWithEmpathy = async (
+    query: string, 
+    audioMetrics?: { speechRate: number; pitchVariance: number; volumeLevel: number }
+  ) => {
     if (!query.trim()) return;
 
     setIsProcessing(true);
-    setStatusText('Sending query...');
+    setStatusText('Understanding your needs...');
 
     try {
       setChatMessages(prev => [...prev, { text: query, role: 'user' }]);
 
-      const ragRes = await fetch('/rag-query', {
+      // Use the Empathy RAG endpoint
+      const ragRes = await fetch('/empathy-rag-query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, tone: 'neutral', k: 2 })
+        body: JSON.stringify({ 
+          query, 
+          speech_rate: audioMetrics?.speechRate,
+          pitch_variance: audioMetrics?.pitchVariance,
+          volume_level: audioMetrics?.volumeLevel,
+          k: 2 
+        })
       });
 
-      if (!ragRes.ok) throw new Error('RAG query failed');
+      if (!ragRes.ok) throw new Error('Query failed');
       const ragData = await ragRes.json();
       const responseText = ragData.response;
       const responseCitations = ragData.citations || [];
+      const empathyAnalysis = ragData.empathy_analysis as EmpathyAnalysis;
+      const adaptiveTtsSettings = ragData.tts_settings as TTSSettings;
+
+      // Update empathy state
+      setCurrentEmotion(empathyAnalysis.detected_emotion);
+      setIsEmergency(empathyAnalysis.is_emergency);
+      setEmergencyType(empathyAnalysis.emergency_type);
+      setEmpathyMode(empathyAnalysis.mode);
+      setEmpathyConfidence(empathyAnalysis.confidence);
+      setTtsSettings(adaptiveTtsSettings);
+
+      console.log('🧠 Empathy Engine:', empathyAnalysis);
+      console.log('🔊 TTS Settings:', adaptiveTtsSettings);
 
       setResponse(responseText);
       setCitations(responseCitations);
-      setChatMessages(prev => [...prev, { text: responseText, role: 'assistant', citations: responseCitations }]);
+      setChatMessages(prev => [...prev, { 
+        text: responseText, 
+        role: 'assistant', 
+        citations: responseCitations,
+        empathyAnalysis 
+      }]);
 
       // Show subtitle
       setSubtitle(responseText);
       setShowSubtitle(true);
 
-      // Generate and play speech
-      setStatusText('Generating response...');
-      console.log('🔊 Requesting TTS for:', responseText);
+      // Generate and play speech with ADAPTIVE TTS (emotion-aware)
+      setStatusText(empathyAnalysis.is_emergency ? 'I\'m here to help...' : 'Generating response...');
+      console.log('🔊 Requesting Adaptive TTS for:', responseText);
       
-      const ttsRes = await fetch('/text-to-speech', {
+      // Use adaptive TTS endpoint with emotion-based settings
+      const ttsRes = await fetch('/adaptive-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: responseText, voice: 'alloy', audio_format: 'mp3' })
+        body: JSON.stringify({ 
+          text: responseText, 
+          emotion: empathyAnalysis.detected_emotion,
+          voice: adaptiveTtsSettings.voice,
+          speed: adaptiveTtsSettings.speed,
+          audio_format: 'mp3' 
+        })
       });
 
       if (!ttsRes.ok) {
         const errorText = await ttsRes.text();
-        console.error('TTS failed:', ttsRes.status, errorText);
+        console.error('Adaptive TTS failed:', ttsRes.status, errorText);
         throw new Error(`TTS failed: ${ttsRes.status}`);
       }
       
-      console.log('✅ TTS response received');
+      console.log('✅ Adaptive TTS response received');
       const audioBlob = await ttsRes.blob();
       console.log('📦 Audio blob size:', audioBlob.size, 'bytes');
       
@@ -380,6 +506,11 @@ export default function App() {
         setTranscript('Waiting for input...');
         setResponse('Processing...');
         setIsProcessing(false);
+        // Reset empathy state after response
+        setCurrentEmotion('neutral');
+        setIsEmergency(false);
+        setEmergencyType(null);
+        setEmpathyMode('standard');
         URL.revokeObjectURL(audioUrl);
         
         // Automatically start listening again after a brief pause
@@ -418,7 +549,7 @@ export default function App() {
     }
   };
 
-  // Send chat message
+  // Send chat message (also uses empathy engine for text input)
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text) return;
@@ -427,24 +558,94 @@ export default function App() {
     setChatInput('');
 
     try {
-      const res = await fetch('/rag-query', {
+      // Use empathy RAG for chat too (no audio metrics for text)
+      const res = await fetch('/empathy-rag-query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: text, tone: 'neutral', k: 2 })
+        body: JSON.stringify({ query: text, k: 2 })
       });
 
       if (!res.ok) throw new Error('Query failed');
       const data = await res.json();
-      setChatMessages(prev => [...prev, { text: data.response, role: 'assistant', citations: data.citations || [] }]);
+      const empathyAnalysis = data.empathy_analysis as EmpathyAnalysis;
+      
+      setChatMessages(prev => [...prev, { 
+        text: data.response, 
+        role: 'assistant', 
+        citations: data.citations || [],
+        empathyAnalysis
+      }]);
+      
+      // Update global empathy state for UI
+      setCurrentEmotion(empathyAnalysis.detected_emotion);
+      setIsEmergency(empathyAnalysis.is_emergency);
     } catch (err: any) {
       setChatMessages(prev => [...prev, { text: `Error: ${err.message}`, role: 'assistant' }]);
     }
   };
 
+  // Get emotion label for display
+  const getEmotionLabel = (emotion: string): string => {
+    const labels: Record<string, string> = {
+      neutral: 'Neutral',
+      happy: 'Positive',
+      confused: 'Needs Clarity',
+      anxious: 'Concerned',
+      angry: 'Frustrated',
+      panicked: 'Urgent',
+      distressed: 'Distressed'
+    };
+    return labels[emotion] || emotion;
+  };
+
+  // Get emotion icon
+  const getEmotionIcon = (emotion: string): string => {
+    const icons: Record<string, string> = {
+      neutral: '😊',
+      happy: '😄',
+      confused: '🤔',
+      anxious: '😰',
+      angry: '😤',
+      panicked: '🆘',
+      distressed: '💙'
+    };
+    return icons[emotion] || '💬';
+  };
+
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-black text-white overflow-hidden">
-      {/* Background gradient */}
-      <div className="fixed inset-0 bg-gradient-radial from-purple-900/5 via-transparent to-transparent pointer-events-none" />
+      {/* Background gradient - changes with emotion */}
+      <div className={`fixed inset-0 pointer-events-none transition-colors duration-1000 ${
+        isEmergency ? 'bg-gradient-radial from-teal-900/10 via-transparent to-transparent' :
+        currentEmotion === 'angry' ? 'bg-gradient-radial from-blue-900/10 via-transparent to-transparent' :
+        currentEmotion === 'anxious' ? 'bg-gradient-radial from-cyan-900/10 via-transparent to-transparent' :
+        'bg-gradient-radial from-purple-900/5 via-transparent to-transparent'
+      }`} />
+      
+      {/* Empathy Engine Indicator - Top Right */}
+      {(isProcessing || animationState === 'responding') && currentEmotion !== 'neutral' && (
+        <div 
+          className="fixed top-8 right-8 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 z-30 animate-fade-in cursor-pointer"
+          onClick={() => setShowEmpathyDetails(true)}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">{getEmotionIcon(currentEmotion)}</span>
+            <div>
+              <div className="text-xs text-gray-400 uppercase tracking-wider">Empathy Mode</div>
+              <div className="text-sm font-medium">
+                {isEmergency ? (
+                  <span className="text-teal-400">Emergency Triage</span>
+                ) : (
+                  <span className="text-purple-300">{getEmotionLabel(currentEmotion)}</span>
+                )}
+              </div>
+            </div>
+            {isEmergency && (
+              <div className="w-2 h-2 bg-teal-400 rounded-full animate-pulse" />
+            )}
+          </div>
+        </div>
+      )}
       
       {/* Message button - Top Left */}
       <button
@@ -456,7 +657,6 @@ export default function App() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
         </svg>
       </button>
-      
       {/* Citations button - Top Left below chat */}
       <button
         onClick={() => setShowCitations(true)}
@@ -567,6 +767,21 @@ export default function App() {
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
               {chatMessages.map((msg, idx) => (
                 <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-fade-in`}>
+                  {/* Empathy badge for assistant messages */}
+                  {msg.role === 'assistant' && msg.empathyAnalysis && msg.empathyAnalysis.detected_emotion !== 'neutral' && (
+                    <div className={`mb-2 px-2.5 py-1 rounded-full text-[10px] font-medium flex items-center gap-1.5 ${
+                      msg.empathyAnalysis.is_emergency 
+                        ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' 
+                        : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                    }`}>
+                      <span>{getEmotionIcon(msg.empathyAnalysis.detected_emotion)}</span>
+                      <span>
+                        {msg.empathyAnalysis.is_emergency 
+                          ? 'Emergency Triage' 
+                          : `${getEmotionLabel(msg.empathyAnalysis.detected_emotion)} Response`}
+                      </span>
+                    </div>
+                  )}
                   <div className={`max-w-[75%] px-5 py-3 rounded-2xl text-[14px] leading-relaxed font-light ${
                     msg.role === 'user' 
                       ? 'bg-white text-black rounded-tr-sm' 
@@ -703,6 +918,172 @@ export default function App() {
                 </p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Empathy Engine Details Modal */}
+      {showEmpathyDetails && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 animate-fade-in">
+          <div className="w-full max-w-lg bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-3xl flex flex-col max-h-[80vh] animate-fade-in mx-4">
+            {/* Header */}
+            <div className="flex justify-between items-center px-6 py-5 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{getEmotionIcon(currentEmotion)}</span>
+                <div>
+                  <h2 className="text-xl font-light tracking-tight">Empathy Engine</h2>
+                  <p className="text-[12px] text-gray-500 mt-0.5">Dynamic Tone & Strategy Adjustment</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEmpathyDetails(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-xl font-light"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+              {/* Current State */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">
+                  Detected Emotional State
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                      isEmergency ? 'bg-teal-500/20' : 'bg-purple-500/20'
+                    }`}>
+                      <span className="text-2xl">{getEmotionIcon(currentEmotion)}</span>
+                    </div>
+                    <div>
+                      <div className="text-lg font-medium">{getEmotionLabel(currentEmotion)}</div>
+                      <div className="text-xs text-gray-500">
+                        {Math.round(empathyConfidence * 100)}% confidence
+                      </div>
+                    </div>
+                  </div>
+                  {isEmergency && (
+                    <span className="px-3 py-1.5 bg-teal-500/20 text-teal-400 text-xs rounded-full font-medium flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-pulse" />
+                      Emergency Mode
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Mode Explanation */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">
+                  Current Mode
+                </div>
+                <div className="text-sm text-gray-300 leading-relaxed">
+                  {empathyMode === 'emergency_triage' ? (
+                    <>
+                      <div className="font-medium text-teal-400 mb-2">🆘 Emergency Triage Active</div>
+                      <p>Detected urgency in your message. I've switched to emergency mode:</p>
+                      <ul className="mt-2 space-y-1 text-xs text-gray-400">
+                        <li>• Providing immediate safety steps first</li>
+                        <li>• Using slower, calmer voice delivery</li>
+                        <li>• Focusing on one action at a time</li>
+                        <li>• Policy details will come after safety</li>
+                      </ul>
+                    </>
+                  ) : currentEmotion === 'angry' ? (
+                    <>
+                      <div className="font-medium text-blue-400 mb-2">😤 De-escalation Mode</div>
+                      <p>I sense frustration. I'm here to help:</p>
+                      <ul className="mt-2 space-y-1 text-xs text-gray-400">
+                        <li>• Acknowledging your concerns first</li>
+                        <li>• Using a calm, measured tone</li>
+                        <li>• Providing clear solutions quickly</li>
+                      </ul>
+                    </>
+                  ) : currentEmotion === 'anxious' ? (
+                    <>
+                      <div className="font-medium text-cyan-400 mb-2">😰 Reassurance Mode</div>
+                      <p>I understand you may be worried. I'm adapting to:</p>
+                      <ul className="mt-2 space-y-1 text-xs text-gray-400">
+                        <li>• Speak more slowly and clearly</li>
+                        <li>• Emphasize what's covered</li>
+                        <li>• Provide clear next steps</li>
+                      </ul>
+                    </>
+                  ) : currentEmotion === 'confused' ? (
+                    <>
+                      <div className="font-medium text-purple-400 mb-2">🤔 Clarity Mode</div>
+                      <p>I'll make sure to explain things simply:</p>
+                      <ul className="mt-2 space-y-1 text-xs text-gray-400">
+                        <li>• Using everyday language</li>
+                        <li>• Breaking down complex terms</li>
+                        <li>• Speaking at a comfortable pace</li>
+                      </ul>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-medium text-gray-300 mb-2">😊 Standard Mode</div>
+                      <p>Providing efficient, clear responses:</p>
+                      <ul className="mt-2 space-y-1 text-xs text-gray-400">
+                        <li>• Direct and factual information</li>
+                        <li>• Professional tone</li>
+                        <li>• Concise answers</li>
+                      </ul>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Voice Adaptation */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+                <div className="text-[10px] font-medium text-gray-500 uppercase tracking-widest mb-3">
+                  Voice Adaptation
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">Voice Style</div>
+                    <div className="text-sm font-medium capitalize">{ttsSettings.voice}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">Speech Speed</div>
+                    <div className="text-sm font-medium">
+                      {ttsSettings.speed < 0.9 ? 'Slower (calming)' : 
+                       ttsSettings.speed > 1.0 ? 'Slightly faster' : 'Normal'}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 bg-black/30 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-teal-500 to-purple-500 transition-all duration-500"
+                    style={{ width: `${ttsSettings.speed * 100}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                  <span>Calm</span>
+                  <span>Normal</span>
+                  <span>Efficient</span>
+                </div>
+              </div>
+
+              {emergencyType && (
+                <div className="bg-teal-500/10 border border-teal-500/30 rounded-2xl p-5">
+                  <div className="text-[10px] font-medium text-teal-400 uppercase tracking-widest mb-2">
+                    Emergency Type Detected
+                  </div>
+                  <div className="text-sm font-medium text-white capitalize">{emergencyType}</div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Safety instructions are being prioritized over policy information.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-white/10 bg-white/5">
+              <p className="text-[11px] text-gray-500 text-center">
+                💡 The Empathy Engine analyzes your voice patterns and words to provide emotionally intelligent responses.
+              </p>
+            </div>
           </div>
         </div>
       )}
