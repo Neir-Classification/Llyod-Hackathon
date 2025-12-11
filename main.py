@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -65,30 +66,99 @@ def get_vector_store():
     return build_vector_store()
 
 
-def load_pdfs(pdf_paths):
-    """Load PDFs and add metadata."""
+def extract_structured_content_with_chatgpt(page_content: str, page_num: int, policy_name: str) -> str:
+    """Use ChatGPT to extract and structure content from a PDF page."""
+    try:
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+        
+        prompt = f"""You are an expert at extracting and structuring insurance policy information.
+
+Analyze the following insurance policy page and extract ALL information into a well-structured, searchable format.
+
+IMPORTANT INSTRUCTIONS:
+1. Extract ALL data points including: coverage details, limits, conditions, exclusions, definitions, procedures, contact info, etc.
+2. Organize information hierarchically with clear sections and subsections
+3. Convert tables into structured text format with clear labels
+4. Preserve all numerical values, percentages, and monetary amounts
+5. Keep policy-specific terminology intact
+6. Create clear relationships between related items
+7. Make the output optimized for semantic search and retrieval
+
+Format your response as structured text with:
+- Clear section headers (use ### for sections, #### for subsections)
+- Bullet points for lists
+- Key-value pairs for specific data (e.g., "Maximum Limit: $500,000")
+- Complete sentences for explanations and conditions
+
+Policy: {policy_name}
+Page: {page_num}
+
+---PAGE CONTENT---
+{page_content}
+---END PAGE CONTENT---
+
+Structured Output:"""
+        
+        messages = [{"role": "user", "content": prompt}]
+        response = llm.invoke(messages)
+        structured_text = response.content
+        
+        logger.info(f"[ChatGPT] Processed {policy_name} page {page_num}: {len(structured_text)} chars")
+        return structured_text
+        
+    except Exception as e:
+        logger.error(f"[ChatGPT] Failed to process page {page_num}: {e}")
+        # Fallback to original content if ChatGPT fails
+        return page_content
+
+
+def load_pdfs_with_chatgpt(pdf_paths):
+    """Load PDFs and process each page through ChatGPT for structured extraction."""
     docs = []
     for path in pdf_paths:
         if not path.exists():
             logger.warning(f"PDF not found: {path}")
             continue
+        
+        logger.info(f"[ChatGPT] Processing PDF: {path.name}")
         loader = PyPDFLoader(str(path))
         loaded_docs = loader.load()
         policy_name = path.name
+        
         for doc in loaded_docs:
-            doc.metadata["policy_name"] = policy_name
-            if "page" in doc.metadata:
-                doc.metadata["page_number"] = doc.metadata["page"]
-        docs.extend(loaded_docs)
+            page_num = doc.metadata.get("page", "unknown")
+            
+            # Process through ChatGPT for structured extraction
+            structured_content = extract_structured_content_with_chatgpt(
+                doc.page_content, 
+                page_num, 
+                policy_name
+            )
+            
+            # Create new document with structured content
+            structured_doc = Document(
+                page_content=structured_content,
+                metadata={
+                    "policy_name": policy_name,
+                    "page_number": page_num,
+                    "source": str(path),
+                    "processed_by": "gpt-4o"
+                }
+            )
+            docs.append(structured_doc)
+        
+        logger.info(f"[ChatGPT] Completed processing {path.name}: {len([d for d in docs if d.metadata['policy_name'] == policy_name])} pages")
+    
     return docs
 
 
-def chunk_docs(docs, chunk_size=500, chunk_overlap=100):
-    """Split documents into chunks."""
+def chunk_docs(docs, chunk_size=2000, chunk_overlap=200):
+    """Split ChatGPT-structured documents into semantic chunks."""
+    # Use section-aware splitting for ChatGPT-structured content
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n", ". ", " ", ""]
+        separators=["\n### ", "\n#### ", "\n\n", "\n", ". ", " ", ""]
     )
     chunks = splitter.split_documents(docs)
     for chunk in chunks:
@@ -100,13 +170,22 @@ def chunk_docs(docs, chunk_size=500, chunk_overlap=100):
 
 
 def build_vector_store():
-    """Build a new FAISS vector store from PDFs."""
+    """Build a new FAISS vector store from PDFs using ChatGPT processing."""
     global _vector_store
-    logger.info("Building FAISS index from PDFs...")
-    docs = load_pdfs(PDF_PATHS)
+    logger.info("Building FAISS index from PDFs with ChatGPT processing...")
+    
+    # Use ChatGPT-based processing
+    docs = load_pdfs_with_chatgpt(PDF_PATHS)
     if not docs:
         raise RuntimeError("No PDFs found to index")
+    
+    logger.info(f"Loaded {len(docs)} pages from PDFs")
+    
+    # Chunk the structured content
     chunks = chunk_docs(docs)
+    logger.info(f"Created {len(chunks)} chunks from {len(docs)} pages")
+    
+    # Create embeddings and build FAISS index
     embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
     _vector_store = FAISS.from_documents(chunks, embeddings)
     FAISS_DIR.mkdir(parents=True, exist_ok=True)
@@ -115,32 +194,101 @@ def build_vector_store():
     return _vector_store
 
 
-def retrieve(query: str, vector_db: FAISS, k: int = 2):
-    """Retrieve relevant chunks from the vector store."""
-    enhanced_query = f"policy coverage clause: {query}"
-    docs = vector_db.max_marginal_relevance_search(enhanced_query, k=k, fetch_k=20)
+def retrieve(query: str, vector_db: FAISS, k: int = 3):
+    """Retrieve relevant chunks from the vector store (ChatGPT-structured)."""
+    # Use direct semantic search on ChatGPT-structured content
+    docs = vector_db.max_marginal_relevance_search(query, k=k, fetch_k=25)
     
-    # Limit chunk length for voice output
+    # Don't truncate Gemini-structured content as aggressively
     for doc in docs:
-        doc.page_content = doc.page_content[:600]
+        doc.page_content = doc.page_content[:1000]
     
     return [(doc, 0.0) for doc in docs]
 
 
-def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral") -> str:
-    """Use LLM to generate a tone-appropriate response from retrieved chunks."""
+def adjust_tone_with_llm(retrieved_chunks, user_question: str, tone: str = "neutral", conversation_history: list = None) -> str:
+    """Use LLM to generate a tone-appropriate response from retrieved chunks with conversation context."""
     if tone not in TONE_PROMPTS:
         tone = "neutral"
+    
+    if conversation_history is None:
+        conversation_history = []
     
     # Combine retrieved chunks into context
     context = "\n\n".join([doc.page_content for doc, _ in retrieved_chunks])
     
+    # Build conversation history context
+    history_context = ""
+    if conversation_history:
+        history_context = "\n\nPrevious Conversation:\n"
+        for msg in conversation_history:  # Use complete conversation history
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            history_context += f"{role}: {msg.get('content', '')}\n"
+    
     system_prompt = f"""{TONE_PROMPTS[tone]}
 
 Based on the policy information below, answer the user's question in 3-4 short sentences suitable for voice (20-30 seconds of speech).
+**Instructions for Answering Insurance Questions Using the Knowledge Base:**
+
+1.  **Prioritize Knowledge Base Search:** Always attempt to answer the user's question by first searching the provided knowledge base.
+
+2.  **Identify Key Information Needs & Keywords:** Understand what specific information the user is asking for. Extract the most relevant
+    keywords and entities from their query (e.g., name, policy number, type of information).
+
+3.  **Execute Knowledge Base Search:** Use the identified keywords to search the knowledge base. Be mindful of potential synonyms or related 
+    terms if the initial search is unsuccessful.
+
+4.  **Analyze Search Results:** Carefully review the entries returned by the search. Identify the entry that directly addresses the user's question.
+
+5.  **Extract and Formulate Answer:** Locate the specific data point needed to answer the user's query within the relevant knowledge base entry. 
+    Formulate a clear, concise, and grammatically correct answer using this information. Avoid directly copying the entire knowledge base entry.
+
+6.  **Handle "No Match" Scenarios:** If your search yields no relevant results, inform the user politely that the information is not currently 
+    available in the knowledge base. For example: "I'm sorry, but I couldn't find that information in our current knowledge base."
+
+7.  **Seek Clarification for Ambiguity:** If the user's question is unclear or ambiguous, ask for specific details before attempting to search the 
+    knowledge base. For example: "Could you please specify which \[policy type/customer name/etc.] you are referring to?"
+
+8.  **Maintain Professional Tone:** Always maintain a helpful and professional tone while providing information to the user.
+
+9.  **Report Knowledge Base Issues:** If you identify any outdated, incorrect, or missing information in the knowledge base, flag it for review by
+     the administrator.
+
+10. **Enhanced Data Analysis:** For questions that require calculations (e.g., total, average, sum), perform the necessary calculations using the 
+    data extracted from the knowledge base. Show your work or the formulas used if appropriate for clarity.
+
+11. **Temporal Reasoning:** When a question involves dates, extract all relevant dates from the knowledge base. Perform any necessary date 
+    calculations (e.g., differences, comparisons). Be precise with date formats in your answers (e.g., YYYY-MM-DD).
+
+12. **Table Generation:** If the question asks for a table or a summary of multiple items, organize your answer in a table format. Include 
+    clear column headers, and align the data appropriately. Sort the table as requested. If no sort order is specified, use a logical order 
+    (e.g., alphabetical, numerical).
+
+13. **Multi-Step Reasoning:** Break down complex questions into smaller, manageable steps. Extract the information needed for each step from 
+    the knowledge base. Use the results of one step to inform the next. Maintain context throughout the process.
+
+14. **Context Maintenance:** Pay attention to the context of the conversation. If a user refers to a previous query, try to use the information 
+    you already provided. Avoid repeating information unless necessary for clarity.
+
+**Example Workflow:**
+
+\* **User Question:** "What is John Smith's life insurance policy number?"
+
+\* **Identify Keywords:** "John Smith", "life insurance", "policy number"
+
+\* **Search Knowledge Base:** Search for entries containing these keywords.
+
+\* **Relevant Entry Found:** (The John Smith entry we discussed earlier)
+
+\* **Extract Answer:** Locate the value for the "policy\_number" field ("LIFE-001").
+
+\* **Formulate Response:** "John Smith's life insurance policy number is LIFE-001."
+
+**Remember:** Your goal is to efficiently and accurately retrieve information from the knowledge base to answer user inquiries, 
+perform calculations, handle dates, generate tables, and maintain context when necessary.
 
 Policy Context:
-{context}"""
+{context}{history_context}"""
 
     user_prompt = f"User question: {user_question}"
     
@@ -167,10 +315,16 @@ class SpeechRequest(BaseModel):
     audio_format: Optional[str] = "mp3"
 
 
+class ChatMessage(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
+
 class RAGQueryRequest(BaseModel):
     query: str
     tone: Optional[str] = "neutral"
     k: Optional[int] = 2
+    conversation_history: Optional[list[ChatMessage]] = []
 
 
 @app.get("/health")
@@ -297,12 +451,12 @@ async def root():
 
 @app.post("/rag-query")
 async def rag_query(body: RAGQueryRequest) -> JSONResponse:
-    """Query the RAG pipeline and return a tone-adjusted response."""
+    """Query the RAG pipeline and return a tone-adjusted response with conversation history."""
     try:
         if not body.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
-        logger.info(f"[RAG QUERY INPUT] Query: '{body.query}' | Tone: '{body.tone}' | K: {body.k}")
+        logger.info(f"[RAG QUERY INPUT] Query: '{body.query}' | Tone: '{body.tone}' | K: {body.k} | History: {len(body.conversation_history or [])}")
         
         # Get or build the vector store
         vector_db = get_vector_store()
@@ -310,8 +464,11 @@ async def rag_query(body: RAGQueryRequest) -> JSONResponse:
         # Retrieve relevant chunks
         results = retrieve(body.query, vector_db, k=body.k)
         
-        # Generate tone-adjusted response
-        response_text = adjust_tone_with_llm(results, body.query, body.tone)
+        # Convert conversation history to dict format
+        history = [{"role": msg.role, "content": msg.content} for msg in (body.conversation_history or [])]
+        
+        # Generate tone-adjusted response with conversation context
+        response_text = adjust_tone_with_llm(results, body.query, body.tone, history)
         
         logger.info(f"[RAG QUERY OUTPUT] Response: '{response_text}'")
         

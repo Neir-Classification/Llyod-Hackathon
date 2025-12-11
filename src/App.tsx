@@ -27,6 +27,7 @@ export default function App() {
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [animationState, setAnimationState] = useState<'idle' | 'listening' | 'thinking' | 'responding'>('idle');
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const vadFrameRef = useState<{ id: number | null }>({ id: null })[0];
 
   // Smooth level animation
   useEffect(() => {
@@ -88,7 +89,20 @@ export default function App() {
 
   // Start recording with silence detection
   const startRecording = async () => {
-    console.log('startRecording called, ready:', ready, 'isRecording:', isRecording);
+    console.log('🎬 Starting recording, ready:', ready, 'isRecording:', isRecording);
+    
+    // Prevent multiple simultaneous recordings
+    if (isRecording) {
+      console.log('⚠️ Already recording, ignoring request');
+      return;
+    }
+    
+    // Cancel any lingering VAD animation frame
+    if (vadFrameRef.id !== null) {
+      console.log('🧹 Canceling previous VAD frame:', vadFrameRef.id);
+      cancelAnimationFrame(vadFrameRef.id);
+      vadFrameRef.id = null;
+    }
     
     try {
       // Enable audio context if not ready (user gesture requirement)
@@ -129,14 +143,35 @@ export default function App() {
       };
 
       recorder.onstop = async () => {
-        console.log('🛑 Recorder stopped - processing audio');
-        stream.getTracks().forEach(t => t.stop());
+        console.log('🛑 Recorder stopped - cleaning up');
+        
+        // Stop all tracks
+        stream.getTracks().forEach(t => {
+          t.stop();
+          console.log('🔌 Stopped track:', t.kind);
+        });
+        
+        // Close audio context
         if (audioCtx) {
-          audioCtx.close();
+          try {
+            await audioCtx.close();
+            console.log('🔇 Audio context closed');
+          } catch (e) {
+            console.warn('Audio context close error:', e);
+          }
         }
+        
+        // Cancel VAD animation frame
+        if (vadFrameRef.id !== null) {
+          console.log('🧹 Canceling VAD frame on stop:', vadFrameRef.id);
+          cancelAnimationFrame(vadFrameRef.id);
+          vadFrameRef.id = null;
+        }
+        
         setRecordedChunks(allChunks);
         setMediaRecorder(null);
         setAudioContext(null);
+        setIsRecording(false);
         
         // Process full audio immediately
         await processVoiceInput(allChunks, mimeType || 'audio/webm');
@@ -180,7 +215,16 @@ export default function App() {
       };
 
       const checkAudioLevel = () => {
-        if (!isChecking || !recorder || recorder.state !== 'recording') {
+        // Check if we should continue monitoring
+        if (!isChecking) {
+          console.log('⛔ VAD checking stopped by flag');
+          vadFrameRef.id = null;
+          return;
+        }
+        
+        if (!recorder || recorder.state !== 'recording') {
+          console.log('⛔ VAD stopped - recorder state:', recorder?.state);
+          vadFrameRef.id = null;
           return;
         }
 
@@ -194,7 +238,7 @@ export default function App() {
           if (calibrationSamples === CALIBRATION_FRAMES) {
             console.log('🎚️ Noise floor calibrated:', noiseFloor.toFixed(2));
           }
-          requestAnimationFrame(checkAudioLevel);
+          vadFrameRef.id = requestAnimationFrame(checkAudioLevel);
           return;
         }
         
@@ -219,28 +263,33 @@ export default function App() {
           if (avgLevel < silenceThreshold) {
             if (silenceStart === null) {
               silenceStart = Date.now();
+              console.log('🔇 Silence started');
             } else {
               const silenceDuration = Date.now() - silenceStart;
               if (silenceDuration > SILENCE_DURATION) {
-                console.log('🛑 Auto-stop: Silence detected for', silenceDuration, 'ms');
+                console.log('🛑 AUTO-STOP: Silence detected for', silenceDuration, 'ms');
                 isChecking = false;
+                vadFrameRef.id = null;
                 if (recorder.state === 'recording') {
                   recorder.stop();
-                  setIsRecording(false);
                 }
                 return;
               }
             }
           } else {
+            if (silenceStart !== null) {
+              console.log('🔊 Speech resumed');
+            }
             silenceStart = null;
           }
         }
 
-        requestAnimationFrame(checkAudioLevel);
+        vadFrameRef.id = requestAnimationFrame(checkAudioLevel);
       };
 
+      // Start VAD after setup
       setTimeout(() => {
-        console.log('🎬 Starting Voice Activity Detection');
+        console.log('🎬 Starting Voice Activity Detection (VAD)');
         checkAudioLevel();
       }, 100);
     } catch (err) {
@@ -304,7 +353,7 @@ export default function App() {
     }
   };
 
-  // Send query to backend
+  // Send query to backend with conversation history
   const sendQuery = async (query: string) => {
     if (!query.trim()) return;
 
@@ -312,12 +361,25 @@ export default function App() {
     setStatusText('Sending query...');
 
     try {
-      setChatMessages(prev => [...prev, { text: query, role: 'user' }]);
+      // Prepare conversation history BEFORE adding new message
+      // This sends the history WITHOUT the current query (backend uses it as context)
+      const conversationHistory = chatMessages.map(msg => ({
+        role: msg.role,
+        content: msg.text
+      }));
+
+      console.log('📤 Sending query with history:', conversationHistory.length, 'messages');
+      console.log('📝 History:', conversationHistory);
 
       const ragRes = await fetch('/rag-query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, tone: 'neutral', k: 2 })
+        body: JSON.stringify({ 
+          query, 
+          tone: 'neutral', 
+          k: 2,
+          conversation_history: conversationHistory
+        })
       });
 
       if (!ragRes.ok) throw new Error('RAG query failed');
@@ -325,7 +387,13 @@ export default function App() {
       const responseText = ragData.response;
 
       setResponse(responseText);
-      setChatMessages(prev => [...prev, { text: responseText, role: 'assistant' }]);
+      
+      // NOW add both user message and assistant response to chat
+      setChatMessages(prev => [
+        ...prev, 
+        { text: query, role: 'user' },
+        { text: responseText, role: 'assistant' }
+      ]);
 
       // Show subtitle
       setSubtitle(responseText);
@@ -404,19 +472,31 @@ export default function App() {
     }
   };
 
-  // Send chat message
+  // Send chat message with conversation history
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text) return;
 
-    setChatMessages(prev => [...prev, { text, role: 'user' }]);
+    const newUserMessage = { text, role: 'user' as const };
+    setChatMessages(prev => [...prev, newUserMessage]);
     setChatInput('');
 
     try {
+      // Prepare conversation history (exclude the message we just added)
+      const conversationHistory = chatMessages.map(msg => ({
+        role: msg.role,
+        content: msg.text
+      }));
+
       const res = await fetch('/rag-query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: text, tone: 'neutral', k: 2 })
+        body: JSON.stringify({ 
+          query: text, 
+          tone: 'neutral', 
+          k: 2,
+          conversation_history: conversationHistory
+        })
       });
 
       if (!res.ok) throw new Error('Query failed');
@@ -432,16 +512,37 @@ export default function App() {
       {/* Background gradient */}
       <div className="fixed inset-0 bg-gradient-radial from-purple-900/5 via-transparent to-transparent pointer-events-none" />
       
-      {/* Message button - Top Left */}
-      <button
-        onClick={() => setShowChat(true)}
-        className="fixed top-8 left-8 w-12 h-12 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 flex items-center justify-center z-30"
-        title="Text chat"
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-        </svg>
-      </button>
+      {/* Top Left Buttons */}
+      <div className="fixed top-8 left-8 flex gap-3 z-30">
+        {/* Message button */}
+        <button
+          onClick={() => setShowChat(true)}
+          className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 flex items-center justify-center"
+          title="Text chat"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        </button>
+        
+        {/* Clear History button */}
+        {chatMessages.length > 0 && (
+          <button
+            onClick={() => {
+              setChatMessages([]);
+              setTranscript('Waiting for input...');
+              setResponse('Processing...');
+              console.log('🗑️ Conversation history cleared');
+            }}
+            className="w-12 h-12 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 transition-all duration-300 flex items-center justify-center"
+            title="Clear conversation history"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        )}
+      </div>
       
       <main className="relative z-10 flex flex-col items-center justify-center w-full max-w-2xl px-5 py-10">
         {/* Greeting */}
@@ -475,9 +576,17 @@ export default function App() {
         </div>
 
         {/* Status Text */}
-        <p className="text-lg text-gray-400 mb-8 animate-fade-in font-light tracking-wide">
+        <p className="text-lg text-gray-400 mb-2 animate-fade-in font-light tracking-wide">
           {isRecording ? 'Listening... (speak naturally, will auto-stop)' : statusText}
         </p>
+        
+        {/* Conversation Context Indicator */}
+        {chatMessages.length > 0 && (
+          <p className="text-sm text-purple-400/60 mb-8 animate-fade-in font-light">
+            {chatMessages.length} message{chatMessages.length !== 1 ? 's' : ''} in conversation
+          </p>
+        )}
+        {chatMessages.length === 0 && <div className="mb-8"></div>}
 
         {/* Bottom Controls - No manual stop button needed */}
       </main>
